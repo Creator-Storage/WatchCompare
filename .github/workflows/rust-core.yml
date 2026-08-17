@@ -1,0 +1,17 @@
+name: Rust core
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test deterministic renderer
+        run: cargo test -p watchcompare-render
+      - name: Check reference CLI
+        run: cargo check -p watchcompare-reference

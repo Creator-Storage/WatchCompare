@@ -1,0 +1,14 @@
+/target/
+/src-tauri/gen/
+.DS_Store
+*.log
+
+# User-supplied/reference media stays local.
+reference/
+analysis-output/
+
+# Font binaries are intentionally local-only. The manifest is committed.
+assets/fonts/*.ttf
+assets/fonts/*.otf
+!assets/fonts/README.md
+!assets/fonts/manifest.json

@@ -1,0 +1,10 @@
+{
+  "family": "Pin Sans",
+  "weights": {
+    "400": "Pin-Sans-MacOS-Regular-708c49dd.ttf",
+    "500": "Pin-Sans-MacOS-Medium-704a4f34.ttf",
+    "700": "Pin-Sans-MacOS-Bold-ce475d98.ttf",
+    "900": "Pin-Sans-MacOS-Heavy-2b6abf8c.ttf"
+  },
+  "policy": "local-authorized-assets"
+}
