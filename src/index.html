@@ -3,77 +3,148 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0b0d12" />
+    <meta name="theme-color" content="#090b0f" />
     <title>WatchCompare</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div class="shell">
+    <div class="app-shell">
       <aside class="rail">
-        <div class="brand-mark" aria-label="Creative Network">CN</div>
-        <button class="rail-button active" data-view="home" title="Home">⌂</button>
-        <button class="rail-button" data-view="projects" title="Projects">▦</button>
-        <button class="rail-button" data-view="reference" title="Reference lock">◎</button>
+        <div class="brand-mark" title="Creative Network">CN</div>
+        <button class="rail-button active" title="Editor">▦</button>
+        <button class="rail-button" id="referenceJump" title="Reference frame">◎</button>
         <div class="rail-spacer"></div>
-        <button class="avatar" title="Account">CW</button>
+        <span class="platform-badge" id="platformBadge">…</span>
       </aside>
 
-      <main>
+      <main class="workspace">
         <header class="topbar">
-          <div>
-            <p class="eyebrow">CREATIVE NETWORK</p>
-            <h1>WatchCompare</h1>
+          <div class="project-heading">
+            <p class="eyebrow">CREATIVE NETWORK · WATCHCOMPARE</p>
+            <input id="projectName" class="project-name" value="Loading…" aria-label="Project name" />
           </div>
           <div class="top-actions">
-            <span class="sync-pill"><span class="dot"></span> Reference connected</span>
-            <button class="secondary">Import project</button>
-            <button class="primary">New comparison</button>
+            <button class="ghost" id="newProject">New</button>
+            <label class="ghost file-button">Import<input type="file" id="importProjectFile" accept=".json,.watchcompare" /></label>
+            <button class="ghost" id="downloadProject">Download JSON</button>
+            <button class="primary" id="saveProject">Save</button>
+            <button class="export-button" id="exportButton">Export</button>
           </div>
         </header>
 
-        <section class="hero">
-          <div class="hero-copy">
-            <span class="tag">REFERENCE LOCK · PASS 1</span>
-            <h2>Build comparisons from a measured timeline, not guesses.</h2>
-            <p>Windows and Android share the same Rust motion model. Every reference constant is tracked until the renderer can survive frame-by-frame comparison.</p>
-            <div class="hero-actions">
-              <button class="primary">Open renderer</button>
-              <button class="secondary" id="sampleButton">Sample frame 3000</button>
+        <section class="editor-grid">
+          <aside class="panel cards-panel">
+            <div class="panel-head">
+              <div><span class="kicker">CARDS</span><strong id="cardCount">0 cards</strong></div>
+              <button class="icon-button" id="addCard" title="Add card">＋</button>
             </div>
-          </div>
-          <div class="reference-card">
-            <div class="reference-preview">
-              <div class="mini-card c1"><b>7M</b><span>YEARS AGO</span></div>
-              <div class="mini-card c2"><b>400K</b><span>YEARS AGO</span></div>
-              <div class="mini-card c3"><b>300K</b><span>YEARS AGO</span></div>
-              <div class="scan"></div>
+            <div id="cardList" class="card-list"></div>
+            <div class="panel-footer card-actions">
+              <button id="duplicateCard">Duplicate</button>
+              <button id="moveCardUp">↑</button>
+              <button id="moveCardDown">↓</button>
+              <button id="deleteCard" class="danger">Delete</button>
             </div>
-            <div class="reference-meta">
-              <span>Evolution Of Language</span>
-              <strong>1920×1080 · 60 FPS</strong>
+          </aside>
+
+          <section class="stage-column">
+            <div class="preview-shell">
+              <div class="preview-toolbar">
+                <div>
+                  <span class="status-dot"></span>
+                  <strong>Rust compositor</strong>
+                  <span id="renderStatus">ready</span>
+                </div>
+                <div class="preview-meta"><span id="resolutionLabel">1920×1080</span><span id="fpsLabel">60 FPS</span></div>
+              </div>
+              <div class="preview-viewport" id="previewViewport">
+                <img id="previewImage" alt="WatchCompare rendered preview" />
+                <div class="preview-empty" id="previewEmpty">Rendering frame…</div>
+              </div>
             </div>
-          </div>
+
+            <div class="transport">
+              <button id="playPause" class="transport-button">▶</button>
+              <div class="scrub-wrap">
+                <input id="frameSlider" type="range" min="0" max="1" value="0" step="1" />
+                <div class="timeline-readout"><span id="timeLabel">00:00.000</span><span id="frameLabel">frame 0</span></div>
+              </div>
+              <button id="jumpStart" class="transport-button">|◀</button>
+              <button id="jumpEnd" class="transport-button">▶|</button>
+            </div>
+
+            <div class="reference-strip">
+              <div><span class="kicker">REFERENCE LOCK</span><strong>Evolution Of Language</strong></div>
+              <div class="reference-readouts">
+                <span>pitch <b id="refPitch">477 px</b></span>
+                <span>source <b id="refFrames">12,267 frames</b></span>
+                <span>scene <b id="refScene">—</b></span>
+              </div>
+              <button class="ghost small" id="sampleReference">Sample same frame</button>
+            </div>
+          </section>
+
+          <aside class="panel inspector-panel">
+            <div class="tabs" role="tablist">
+              <button class="tab active" data-tab="card">Card</button>
+              <button class="tab" data-tab="project">Project</button>
+              <button class="tab" data-tab="export">Export</button>
+            </div>
+
+            <div class="tab-page active" data-page="card">
+              <div class="field"><label>Title</label><input id="cardTitle" /></div>
+              <div class="field"><label>Description</label><textarea id="cardDescription" rows="3"></textarea></div>
+              <div class="field-row">
+                <div class="field"><label>Badge value</label><input id="badgeValue" /></div>
+                <div class="field"><label>Badge label</label><input id="badgeLabel" /></div>
+              </div>
+              <div class="field"><label>Artwork file path</label><input id="artworkPath" placeholder="C:\media\card.png" /></div>
+              <div class="field"><label>Artwork colour</label><div class="color-line"><input id="artworkColor" type="color" /><input id="artworkColorHex" class="mono" maxlength="7" /></div></div>
+              <div class="note">Image paths are read by the Rust compositor. If the file cannot be opened, the colour remains as the artwork background.</div>
+            </div>
+
+            <div class="tab-page" data-page="project">
+              <div class="field"><label>Model</label><select id="modelKind"><option value="reference_locked">Reference locked</option><option value="clean">Clean</option><option value="illustrated">Illustrated</option></select></div>
+              <div class="field-row">
+                <div class="field"><label>Width</label><input id="exportWidth" type="number" min="320" max="7680" /></div>
+                <div class="field"><label>Height</label><input id="exportHeight" type="number" min="180" max="4320" /></div>
+              </div>
+              <div class="field-row">
+                <div class="field"><label>FPS</label><input id="exportFps" type="number" min="1" max="240" /></div>
+                <div class="field"><label>Duration (s)</label><input id="durationSeconds" type="number" min="0.1" step="0.1" /></div>
+              </div>
+              <div class="field-row">
+                <div class="field"><label>Card pitch</label><input id="cardPitch" type="number" min="80" step="0.5" /></div>
+                <div class="field"><label>Scroll px/s</label><input id="scrollSpeed" type="number" min="0" step="0.001" /></div>
+              </div>
+              <div class="field"><label>Font path</label><input id="fontPath" placeholder="Optional Pin Sans font you own" /></div>
+              <div class="note">For reference typography, point WatchCompare to your local Pin Sans file. The font itself is never embedded in the project.</div>
+            </div>
+
+            <div class="tab-page" data-page="export">
+              <div class="field"><label>Project save path</label><input id="projectSavePath" class="mono" /></div>
+              <div class="field"><label>Output path</label><input id="outputPath" class="mono" /></div>
+              <div class="field"><label>Soundtrack path</label><input id="soundtrackPath" class="mono" /></div>
+              <div class="field-row">
+                <div class="field"><label>Video Mbps</label><input id="videoBitrate" type="number" min="1" max="200" /></div>
+                <div class="field"><label>Audio kbps</label><input id="audioBitrate" type="number" min="64" max="512" /></div>
+              </div>
+              <button class="export-wide" id="exportButtonSide">Start export</button>
+              <div class="export-progress" id="exportProgress">
+                <div class="progress-head"><strong id="exportStage">Idle</strong><span id="exportPercent">0%</span></div>
+                <div class="progress-track"><i id="exportBar"></i></div>
+                <div class="progress-foot"><span id="exportFrames">0 / 0</span><button id="cancelExport" disabled>Cancel</button></div>
+                <div class="error-text" id="exportError"></div>
+              </div>
+            </div>
+          </aside>
         </section>
 
-        <section class="grid stats" id="stats">
-          <article><span>Card pitch</span><strong id="pitch">477 px</strong><small>verified</small></article>
-          <article><span>Steady scroll</span><strong id="speed">133.473 px/s</strong><small>verified</small></article>
-          <article><span>Frame count</span><strong id="frames">12,267</strong><small>verified</small></article>
-          <article><span>Lock status</span><strong>Pass 1</strong><small>intro/outro fitting next</small></article>
-        </section>
-
-        <section class="section-head">
-          <div><p class="eyebrow">WORKSPACE</p><h3>Creative tools</h3></div>
-          <button class="text-button">Manage tools →</button>
-        </section>
-
-        <section class="grid tools">
-          <article class="tool-card featured"><div class="tool-icon">W</div><div><h4>Comparison Studio</h4><p>Cards, badges, timing, data and deterministic export.</p></div><button>Open</button></article>
-          <article class="tool-card"><div class="tool-icon">R</div><div><h4>Reference Lock</h4><p>Contact sheets, measurements and frame-diff calibration.</p></div><button>Inspect</button></article>
-          <article class="tool-card"><div class="tool-icon">A</div><div><h4>Asset Library</h4><p>Artwork, badges, local fonts and reusable project media.</p></div><button>Browse</button></article>
-        </section>
-
-        <section class="console" id="console"><div><span class="dot"></span> Rust timeline ready</div><code id="sampleOutput">frame 3000 → waiting for sample</code></section>
+        <footer class="statusbar">
+          <span id="dirtyState">Saved</span>
+          <span id="backendState">Waiting for backend…</span>
+          <code id="debugState">frame 0</code>
+        </footer>
       </main>
     </div>
     <script src="app.js"></script>
