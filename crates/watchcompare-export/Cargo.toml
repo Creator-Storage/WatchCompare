@@ -1,0 +1,10 @@
+[package]
+name = "watchcompare-export"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+watchcompare-project = { path = "../watchcompare-project" }
+watchcompare-compositor = { path = "../watchcompare-compositor" }
