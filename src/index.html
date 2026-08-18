@@ -4,78 +4,148 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0b0d12" />
-    <title>WatchCompare</title>
+    <title>WatchCompare Studio</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div class="shell">
-      <aside class="rail">
-        <div class="brand-mark" aria-label="Creative Network">CN</div>
-        <button class="rail-button active" data-view="home" title="Home">⌂</button>
-        <button class="rail-button" data-view="projects" title="Projects">▦</button>
-        <button class="rail-button" data-view="reference" title="Reference lock">◎</button>
-        <div class="rail-spacer"></div>
-        <button class="avatar" title="Account">CW</button>
-      </aside>
-
-      <main>
-        <header class="topbar">
+    <div class="app-shell">
+      <header class="app-bar">
+        <div class="brand">
+          <div class="brand-mark">WC</div>
           <div>
-            <p class="eyebrow">CREATIVE NETWORK</p>
-            <h1>WatchCompare</h1>
+            <strong>WatchCompare</strong>
+            <span id="bridgeStatus">Loading measured timeline…</span>
           </div>
-          <div class="top-actions">
-            <span class="sync-pill"><span class="dot"></span> Reference connected</span>
-            <button class="secondary">Import project</button>
-            <button class="primary">New comparison</button>
-          </div>
-        </header>
+        </div>
+        <input id="projectName" class="project-name" value="Untitled comparison" aria-label="Project name" />
+        <div class="app-actions">
+          <button id="newProjectButton" class="ghost">New</button>
+          <button id="importProjectButton" class="ghost">Import project</button>
+          <button id="exportProjectButton" class="ghost">Export project</button>
+          <button id="loadFontButton" class="ghost">Load font</button>
+          <button id="exportFrameButton" class="primary">Export frame PNG</button>
+        </div>
+      </header>
 
-        <section class="hero">
-          <div class="hero-copy">
-            <span class="tag">REFERENCE LOCK · PASS 1</span>
-            <h2>Build comparisons from a measured timeline, not guesses.</h2>
-            <p>Windows and Android share the same Rust motion model. Every reference constant is tracked until the renderer can survive frame-by-frame comparison.</p>
-            <div class="hero-actions">
-              <button class="primary">Open renderer</button>
-              <button class="secondary" id="sampleButton">Sample frame 3000</button>
+      <section class="workspace">
+        <aside class="cards-panel panel">
+          <div class="panel-head">
+            <div>
+              <span class="kicker">CARDS</span>
+              <h2>Comparison data</h2>
+            </div>
+            <button id="addCardButton" class="icon-button" title="Add card">＋</button>
+          </div>
+          <div class="panel-actions">
+            <button id="importCsvButton">Import CSV</button>
+            <span id="cardCount">0 cards</span>
+          </div>
+          <div id="cardList" class="card-list"></div>
+        </aside>
+
+        <main class="studio">
+          <div class="stage-toolbar">
+            <div class="stage-meta">
+              <span id="stageLabel">REFERENCE TIMELINE</span>
+              <strong id="frameLabel">Frame 0 · 0.000 ms</strong>
+            </div>
+            <div class="zoom-tools">
+              <button data-zoom="fit" class="active">Fit</button>
+              <button data-zoom="0.5">50%</button>
+              <button data-zoom="1">100%</button>
             </div>
           </div>
-          <div class="reference-card">
-            <div class="reference-preview">
-              <div class="mini-card c1"><b>7M</b><span>YEARS AGO</span></div>
-              <div class="mini-card c2"><b>400K</b><span>YEARS AGO</span></div>
-              <div class="mini-card c3"><b>300K</b><span>YEARS AGO</span></div>
-              <div class="scan"></div>
-            </div>
-            <div class="reference-meta">
-              <span>Evolution Of Language</span>
-              <strong>1920×1080 · 60 FPS</strong>
+
+          <div id="stageScroller" class="stage-scroller">
+            <div id="canvasWrap" class="canvas-wrap">
+              <canvas id="preview" width="1920" height="1080"></canvas>
+              <div id="emptyCanvasState" class="canvas-empty">
+                <strong>No cards yet</strong>
+                <span>Add a card or import a CSV. This is the actual editor canvas.</span>
+              </div>
             </div>
           </div>
-        </section>
 
-        <section class="grid stats" id="stats">
-          <article><span>Card pitch</span><strong id="pitch">477 px</strong><small>verified</small></article>
-          <article><span>Steady scroll</span><strong id="speed">133.473 px/s</strong><small>verified</small></article>
-          <article><span>Frame count</span><strong id="frames">12,267</strong><small>verified</small></article>
-          <article><span>Lock status</span><strong>Pass 1</strong><small>intro/outro fitting next</small></article>
-        </section>
+          <div class="transport panel">
+            <div class="transport-buttons">
+              <button id="firstFrameButton" title="First frame">|◀</button>
+              <button id="prevFrameButton" title="Previous frame">◀</button>
+              <button id="playButton" class="play" title="Play">▶</button>
+              <button id="nextFrameButton" title="Next frame">▶</button>
+              <button id="lastFrameButton" title="Last frame">▶|</button>
+            </div>
+            <input id="timeline" type="range" min="0" max="12266" value="0" step="1" />
+            <div class="transport-readout">
+              <strong id="timeReadout">00:00.000</strong>
+              <span id="stageReadout">intro</span>
+            </div>
+          </div>
+        </main>
 
-        <section class="section-head">
-          <div><p class="eyebrow">WORKSPACE</p><h3>Creative tools</h3></div>
-          <button class="text-button">Manage tools →</button>
-        </section>
+        <aside class="inspector panel">
+          <div class="panel-head">
+            <div>
+              <span class="kicker">INSPECTOR</span>
+              <h2 id="inspectorTitle">Card</h2>
+            </div>
+          </div>
 
-        <section class="grid tools">
-          <article class="tool-card featured"><div class="tool-icon">W</div><div><h4>Comparison Studio</h4><p>Cards, badges, timing, data and deterministic export.</p></div><button>Open</button></article>
-          <article class="tool-card"><div class="tool-icon">R</div><div><h4>Reference Lock</h4><p>Contact sheets, measurements and frame-diff calibration.</p></div><button>Inspect</button></article>
-          <article class="tool-card"><div class="tool-icon">A</div><div><h4>Asset Library</h4><p>Artwork, badges, local fonts and reusable project media.</p></div><button>Browse</button></article>
-        </section>
+          <div id="inspectorEmpty" class="inspector-empty">
+            Select or create a card to edit it.
+          </div>
 
-        <section class="console" id="console"><div><span class="dot"></span> Rust timeline ready</div><code id="sampleOutput">frame 3000 → waiting for sample</code></section>
-      </main>
+          <form id="cardForm" class="card-form" hidden>
+            <label>Title
+              <input id="cardTitle" autocomplete="off" />
+            </label>
+            <label>Description
+              <textarea id="cardDescription" rows="3"></textarea>
+            </label>
+            <label>Badge
+              <input id="cardBadge" autocomplete="off" placeholder="400K" />
+            </label>
+            <label>Badge subtitle
+              <input id="cardBadgeSubtitle" autocomplete="off" placeholder="YEARS AGO" />
+            </label>
+            <div class="two-col">
+              <label>Accent
+                <input id="cardAccent" type="color" value="#d8172d" />
+              </label>
+              <label>Artwork background
+                <input id="cardBackground" type="color" value="#244c66" />
+              </label>
+            </div>
+            <label class="file-field">Artwork image
+              <button type="button" id="chooseArtworkButton">Choose image…</button>
+              <span id="artworkName">No image</span>
+            </label>
+            <div class="inspector-actions">
+              <button type="button" id="moveUpButton">Move left</button>
+              <button type="button" id="moveDownButton">Move right</button>
+              <button type="button" id="duplicateCardButton">Duplicate</button>
+              <button type="button" id="deleteCardButton" class="danger">Delete</button>
+            </div>
+          </form>
+
+          <div class="reference-readout">
+            <span class="kicker">MEASURED STATE</span>
+            <dl>
+              <div><dt>Card train X</dt><dd id="trainX">0 px</dd></div>
+              <div><dt>Pitch</dt><dd id="pitchReadout">477 px</dd></div>
+              <div><dt>Credits edge</dt><dd id="creditsReadout">—</dd></div>
+              <div><dt>Fade</dt><dd id="fadeReadout">100%</dd></div>
+            </dl>
+          </div>
+        </aside>
+      </section>
     </div>
+
+    <input id="projectFileInput" type="file" accept="application/json,.json" hidden />
+    <input id="csvFileInput" type="file" accept="text/csv,.csv" hidden />
+    <input id="artworkFileInput" type="file" accept="image/*" hidden />
+    <input id="fontFileInput" type="file" accept=".ttf,.otf,font/ttf,font/otf" multiple hidden />
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <script src="app.js"></script>
   </body>
 </html>
