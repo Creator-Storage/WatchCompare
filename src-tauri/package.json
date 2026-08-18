@@ -1,0 +1,7 @@
+{
+  "name": "watchcompare-tauri-host",
+  "private": true,
+  "scripts": {
+    "tauri": "tauri"
+  }
+}
