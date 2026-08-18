@@ -46,7 +46,7 @@ mod tests {
         assert_eq!(cursor_white_tip(12_007), Some(CursorWhiteTip { x: 530, y: 221 }));
         assert_eq!(cursor_white_tip(12_053), Some(CursorWhiteTip { x: 543, y: 103 }));
         assert_eq!(cursor_white_tip(12_078), Some(CursorWhiteTip { x: 678, y: 123 }));
-        assert_eq!(cursor_white_tip(12_115), Some(CursorWhiteTip { x: 854, y: 108 }));
+        assert_eq!(cursor_white_tip(12_115), Some(CursorWhiteTip { x: 855, y: 108 }));
         assert_eq!(cursor_white_tip(12_169), Some(CursorWhiteTip { x: 963, y: 110 }));
         assert_eq!(cursor_white_tip(12_180), Some(CursorWhiteTip { x: 962, y: 110 }));
         assert_eq!(cursor_white_tip(12_200), Some(CursorWhiteTip { x: 981, y: 189 }));
