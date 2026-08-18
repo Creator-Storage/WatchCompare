@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 pub const PROJECT_FORMAT_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelKind {
     ReferenceLocked,
@@ -149,6 +149,11 @@ impl Project {
         if self.cards.is_empty() {
             return Err("project needs at least one card".into());
         }
+        if self.model == ModelKind::ReferenceLocked
+            && (self.export.width != 1920 || self.export.height != 1080 || self.export.fps != 60)
+        {
+            return Err("reference_locked renders at the measured source raster: 1920x1080 at 60 fps".into());
+        }
         Ok(())
     }
 
@@ -161,11 +166,12 @@ impl Project {
             RgbaColor(225, 94, 112, 255),
         ];
         let labels = [
-            ("400K", "YEARS AGO", "Early language", "Proto-human vocal communication"),
-            ("300K", "YEARS AGO", "Archaic speech", "More complex shared sounds"),
-            ("50K", "YEARS AGO", "Symbolic language", "Rapid vocabulary expansion"),
-            ("5K", "YEARS AGO", "Writing systems", "Speech begins to leave records"),
-            ("2026", "TODAY", "Modern language", "Thousands of living languages"),
+            ("7M", "YEARS AGO", "Ape Noises And Gestures", "Our chimp ancestors spoke with hoots and gestures"),
+            ("400K", "YEARS AGO", "Language Section Of Brain Develops", "The FOXP2 gene gave us the language part of our brain"),
+            ("300K", "YEARS AGO", "Voice Box Evolves Fully", "A lower larynx unlocked many more distinct sounds"),
+            ("50K", "YEARS AGO", "Symbolic Language", "Rapid vocabulary expansion"),
+            ("5K", "YEARS AGO", "Writing Systems", "Speech begins to leave records"),
+            ("2026", "TODAY", "Modern Language", "Thousands of living languages"),
         ];
         Self {
             format_version: PROJECT_FORMAT_VERSION,
@@ -218,5 +224,12 @@ mod tests {
         project.export.fps = 60;
         project.export.duration_seconds = 2.5;
         assert_eq!(project.duration_frames(), 150);
+    }
+
+    #[test]
+    fn reference_locked_rejects_non_reference_raster() {
+        let mut project = Project::demo();
+        project.export.width = 1280;
+        assert!(project.validate().unwrap_err().contains("1920x1080"));
     }
 }
