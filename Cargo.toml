@@ -9,6 +9,7 @@ members = [
   "crates/watchcompare-midcta",
   "crates/watchcompare-scene",
   "crates/watchcompare-diff",
+  "crates/watchcompare-compositor",
 ]
 
 [workspace.package]
