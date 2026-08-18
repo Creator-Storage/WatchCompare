@@ -127,25 +127,107 @@ Mean displacement:
 
 The all-frame pass confirms that this is a good steady-state mean, while also showing that the decoded raster does not present one identical measured delta on every frame because subpixel rendering and compression redistribute edge energy between neighboring pixels.
 
-## Badge motion — structure confirmed, exact numeric fit still pending
+## Additional intro card reveals — verified exact-frame measurements
 
-The badge is not baked into a single static card image. The reference shows independent badge behavior including entrance/settling and a diagonal highlight/shine. The exact-frame pass is now the required method for recovering:
+The second and third normal card reveals were measured independently at the title-panel row rather than inferred from the first card:
 
-- badge base polygon geometry;
-- anchor point and final x/y;
-- initial x/y/scale for each reveal;
-- easing and overshoot/settle values;
-- blur/softness during fast motion;
-- diagonal shine angle, width, opacity, and start/end source-frame PTS;
-- text baseline/leading inside the badge.
+- card 2 first reliable visible panel: **frame 125 = 2083.333 ms**; it reaches >=470 px by frame 180 and ~480 px around frame 190;
+- card 3 first reliable visible panel: **frame 244 = 4066.667 ms**; it reaches >=470 px by frame 299 and ~480 px around frame 310;
+- card 4 is deliberately **not** treated as a normal reveal because the credits overlay is retracting over an already-present card.
 
-The intro's red badge already shows visible overscale/settle across consecutive 16.667 ms frames; it will be tracked independently from card clipping so those two animations are not conflated.
+The complete source-frame width series is generated locally from the reference; the verified first-visible event frames are promoted into renderer constants. The source-driven generator remains the reproducible source for the larger trace.
 
-## Outro — confirmed structure, curves still provisional
+## Credits-panel exit — verified exact-frame measurement
 
-The final segment transitions from the moving card train into a black end-screen layout. The final `2200 AD` card remains on the right while the left side fills with recommendation blocks, subscription/engagement UI, and a “Video Made By” credit block. The complete frame then fades down.
+A fixed row inside the right-side credits panel was tracked on every source frame through its exit:
 
-This must be a dedicated timeline stage rather than a normal card exit. It will receive the same PTS-exact treatment as the intro.
+- panel left edge is stationary at **x=1431** through frame **395 = 6583.333 ms**;
+- at **frame 396 = 6600 ms** it retracts abruptly to **x=1703**, exposing a large portion of card 4 in one source-frame interval;
+- then its left edge continues rightward every frame (`1717, 1730, 1741, 1752, ...`);
+- frame **428 = 7133.333 ms** leaves only ~27 px;
+- frame **429 = 7150 ms** is the first measured frame with the panel fully gone.
+
+That large frame-395→396 jump is present in the decoded source and is therefore retained; it must not be smoothed away into a generic UI easing curve. The full series is in `docs/measurements/credits-exit-exact.csv`.
+
+## Badge polygon — verified raster geometry
+
+A stable first badge was isolated on **frame 220** with no active shine. The connected red component has raster extent **298 × 344 px**. Its clean six-vertex outline is approximated at source-pixel coordinates relative to that component as:
+
+```text
+(148,   0)
+(  2,  84)
+(  0, 255)
+(151, 343)
+(297, 257)
+(297,  84)
+```
+
+In global frame-220 coordinates the same contour is approximately `(242,32), (96,116), (94,287), (245,375), (391,289), (391,116)`. These dimensions/vertices are now renderer constants rather than an eyeballed hexagon.
+
+## Badge entrance, overscale and blur — verified frame series; curve fit pending
+
+The badge is independent of card clipping and has a long scale/position/blur settle:
+
+- first actual red badge pixels appear at **frame 34 = 566.667 ms**;
+- first badge is only `16×96` visible pixels on frame 34 because it is still entering from beyond the top-left;
+- its red width reaches the 298 px canonical width by roughly frame 72, then **overscales** instead of stopping;
+- first badge reaches about **332 px red width (~1.114× canonical)** around frames 115–120 before settling;
+- the second badge provides a cleaner non-overlapped settle series: around frame 180 its red component is ~374 px wide (**1.255× canonical**) and mostly off the top; by frame 220 it is ~350 px (**1.174×**); by frame 260 ~320 px (**1.074×**); and by frame 292 it reaches the canonical ~298 px scale.
+
+The text does not merely fade in. A canonicalized edge/sharpness measurement on the second badge rises from extremely blurred at frame 168 to sharply resolved by the low-200s. Therefore WatchCompare must model **motion blur/softness and scale simultaneously**, not substitute alpha animation.
+
+The complete first-badge consecutive-frame track is committed as `docs/measurements/badge1-lifecycle-exact.csv`. The longer second-badge sharpness/settle trace is generated locally from the reference and used for the numeric fit without committing source-derived raster artifacts.
+
+The source-frame series is verified; the exact mathematical easing/spline fit is still provisional until renderer image-diff validation.
+
+## Diagonal badge shine — timing verified, geometric fit provisional
+
+The second badge was used because its shine is isolated clearly enough for consecutive-frame tracking:
+
+- faint precursor begins around **frame 232 = 3866.667 ms**;
+- strong shine interval: **frames 234–249 = 3900–4150 ms**;
+- fading tail remains around frames 250–251;
+- shine is visually gone by **frame 252 = 4200 ms**.
+
+The fitted bright band has a major-axis direction near **121.5° from +x** (equivalently a line direction of about −58.5°), and its fitted normal-center advances about **18.45 px per source frame (~1107 px/s)**. The central 80% bright-band width is typically around **32–41 px** in the strongest frames. Because compression and the clipping polygon perturb the fit, angle/speed/width remain **provisional geometry**, while the source-frame visibility window is promoted as verified timing.
+
+The complete fit samples are committed as `docs/measurements/badge-shine-exact.csv`.
+
+## Badge typography — strong evidence, still provisional raster match
+
+Against the supplied authorized Pin Sans files, mask-overlap tests on the stable frame-220 badge currently favor:
+
+- large top line (`7M`): **Pin Sans Heavy around 91 px**;
+- lower line (`YEARS AGO`): **Pin Sans Bold around 46–47 px**.
+
+The weight evidence is strong, but exact point size, baseline, hinting and rasterizer behavior remain provisional until rendered glyph masks are diffed against the source. Font binaries remain local and are never committed.
+
+## Badge scale ladder during the intro — verified structural behavior
+
+At frame **523 = 8716.667 ms**, immediately before the card train begins to pan, visible badge sizes differ by card age/position rather than sharing one static scale:
+
+- newest/right badge: ~`302×346`;
+- next: ~`274×314`;
+- next: ~`246×286`;
+- oldest/left: ~`248×283`.
+
+This confirms that older badges continue shrinking as later cards arrive. A renderer that gives every visible badge one final fixed size will diverge from the source even after the initial badge entrance has finished.
+
+## Outro/end screen — structure confirmed; fade timing verified
+
+The final segment transitions from the moving card train into a black end-screen layout. The final `2200 AD` card remains on the right while the left side fills with recommendation blocks, subscription/engagement UI, and a “Video Made By” credit block. This is a dedicated composition, not a normal card exit.
+
+The end-screen fade has now been measured on every real source frame using a stable interior region of the red recommendation panel:
+
+- full measured red level remains unchanged through **frame 12179 = 202983.333 ms**;
+- **frame 12180 = 203000 ms** is the first fading source image;
+- frame 12181 is already ~97.7% of the baseline red-region brightness;
+- ~75% is crossed at frame 12205 = 203416.667 ms;
+- ~50% is crossed at frame 12225 = 203750 ms;
+- ~25% is crossed at frame 12246 = 204100 ms;
+- the tracked region is fully black from **frame 12258 = 204300 ms** through the last frame.
+
+The complete consecutive-frame fade trace is generated locally; its verified boundary frames are promoted into renderer constants. The earlier geometry/build-in portion of the outro still needs the same exact object-tracking treatment before it can be considered locked.
 
 ## Acceptance strategy
 
