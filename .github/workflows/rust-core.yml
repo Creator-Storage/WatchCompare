@@ -19,5 +19,7 @@ jobs:
         run: cargo test -p watchcompare-render
       - name: Test exact scene sampler
         run: cargo test -p watchcompare-scene
+      - name: Test strict pixel-diff core
+        run: cargo test -p watchcompare-diff
       - name: Check reference CLI
         run: cargo check -p watchcompare-reference
