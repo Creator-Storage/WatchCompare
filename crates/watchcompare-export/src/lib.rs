@@ -27,18 +27,24 @@ impl ExportProgress {
     }
 }
 
-pub fn render_png_sequence<F>(project: &Project, directory: &Path, mut progress: F) -> Result<(), String>
+pub fn render_png_sequence<F, C>(
+    project: &Project,
+    directory: &Path,
+    mut progress: F,
+    mut cancelled: C,
+) -> Result<(), String>
 where
     F: FnMut(ExportProgress),
+    C: FnMut() -> bool,
 {
     project.validate()?;
     fs::create_dir_all(directory).map_err(|e| format!("create {}: {e}", directory.display()))?;
-    let font = project
-        .font_path
-        .as_deref()
-        .and_then(|path| load_font_file(path).ok());
+    let font = project.font_path.as_deref().and_then(|path| load_font_file(path).ok());
     let total = project.duration_frames();
     for frame in 0..total {
+        if cancelled() {
+            return Err("export cancelled".into());
+        }
         let image = render_project_frame(project, frame, font.as_ref())?;
         let path = directory.join(format!("frame-{frame:08}.png"));
         image.save(&path).map_err(|e| format!("save {}: {e}", path.display()))?;
@@ -66,6 +72,7 @@ where
         .arg("-c:v").arg("libx264")
         .arg("-preset").arg("medium")
         .arg("-pix_fmt").arg("yuv420p")
+        .arg("-movflags").arg("+faststart")
         .arg("-b:v").arg(format!("{}M", project.export.video_bitrate_mbps.max(1)));
     if let Some(audio) = project.export.soundtrack_path.as_deref() {
         command
@@ -75,9 +82,7 @@ where
             .arg("-b:a").arg(format!("{}k", project.export.audio_bitrate_kbps.max(64)));
     }
     let status = command.arg(output).status().map_err(|e| format!("launch ffmpeg: {e}"))?;
-    if !status.success() {
-        return Err(format!("ffmpeg exited with {status}"));
-    }
+    if !status.success() { return Err(format!("ffmpeg exited with {status}")); }
     Ok(())
 }
 
@@ -86,26 +91,53 @@ pub fn encode_mp4_with_ffmpeg<F>(_project: &Project, _frames: &Path, _output: &P
 where
     F: FnMut(ExportProgress),
 {
-    Err("MP4 encoding requires the Android media encoder bridge; frame rendering is available on Android".into())
+    Err("Android MP4 encoding is not provided by the desktop ffmpeg backend".into())
 }
 
-pub fn export_mp4<F>(project: &Project, scratch_root: &Path, output: &Path, mut progress: F) -> Result<(), String>
+pub fn export_mp4<F, C>(
+    project: &Project,
+    scratch_root: &Path,
+    output: &Path,
+    mut progress: F,
+    mut cancelled: C,
+) -> Result<(), String>
 where
     F: FnMut(ExportProgress),
+    C: FnMut() -> bool,
 {
     let frames = unique_frames_dir(scratch_root);
-    render_png_sequence(project, &frames, |p| progress(p))?;
+    let rendered = render_png_sequence(project, &frames, |p| progress(p), || cancelled());
+    if let Err(error) = rendered {
+        let _ = fs::remove_dir_all(&frames);
+        return Err(error);
+    }
+    if cancelled() {
+        let _ = fs::remove_dir_all(&frames);
+        return Err("export cancelled".into());
+    }
     let result = encode_mp4_with_ffmpeg(project, &frames, output, |p| progress(p));
     let _ = fs::remove_dir_all(&frames);
     result
 }
 
+/// Mobile-safe deterministic export. On Android this writes a numbered PNG
+/// sequence into `output_directory`; Windows uses `export_mp4` for final video.
+pub fn export_frames<F, C>(
+    project: &Project,
+    output_directory: &Path,
+    progress: F,
+    cancelled: C,
+) -> Result<(), String>
+where
+    F: FnMut(ExportProgress),
+    C: FnMut() -> bool,
+{
+    render_png_sequence(project, output_directory, progress, cancelled)
+}
+
 fn unique_frames_dir(root: &Path) -> PathBuf {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let stamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|v| v.as_nanos())
-        .unwrap_or(0);
+    let stamp = SystemTime::now().duration_since(UNIX_EPOCH).map(|v| v.as_nanos()).unwrap_or(0);
     root.join(format!("watchcompare-{stamp}"))
 }
 
