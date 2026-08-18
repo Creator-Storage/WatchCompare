@@ -5,6 +5,7 @@ members = [
   "crates/watchcompare-render",
   "crates/watchcompare-reference",
   "crates/watchcompare-fixtures",
+  "crates/watchcompare-scene",
 ]
 
 [workspace.package]
