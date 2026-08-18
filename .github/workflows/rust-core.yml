@@ -13,6 +13,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Test exact source-frame fixtures
         run: cargo test -p watchcompare-fixtures
+      - name: Test exact cursor trajectory
+        run: cargo test -p watchcompare-cursor
       - name: Test deterministic renderer
         run: cargo test -p watchcompare-render
       - name: Test exact scene sampler
