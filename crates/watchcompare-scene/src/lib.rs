@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use watchcompare_cursor as cursor;
 use watchcompare_fixtures as fx;
+use watchcompare_midcta as midcta;
 use watchcompare_render as render;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -10,6 +11,14 @@ pub struct BadgeSceneState {
     pub transform: Option<fx::BadgeTransform>,
     pub text_reveal_level: f32,
     pub shine: Option<render::ShineSample>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct MidVideoCtaSceneState {
+    pub visible: bool,
+    /// Exact strong-red raster geometry. It becomes None during the final
+    /// white/glow-only exit even though `visible` remains true.
+    pub red_bbox: Option<midcta::Rect>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -50,6 +59,7 @@ pub struct ReferenceSceneState {
     pub first_card_reveal_width_px: u16,
     pub credits_left_x_px: Option<u16>,
     pub second_badge: BadgeSceneState,
+    pub mid_video_cta: MidVideoCtaSceneState,
     pub cta: CtaSceneState,
     pub outro: OutroSceneState,
 }
@@ -132,6 +142,11 @@ pub fn sample_reference_scene(frame: u64) -> ReferenceSceneState {
         shine: render::second_badge_shine_sample(frame),
     };
 
+    let mid_video_cta = MidVideoCtaSceneState {
+        visible: midcta::visible(frame),
+        red_bbox: midcta::red_bbox(frame),
+    };
+
     let cta = CtaSceneState {
         outer_bbox: render::outro_cta_bbox(frame),
         subscribe_visible: frame >= fx::CTA_SUBSCRIBE_FIRST_VISIBLE_FRAME,
@@ -165,6 +180,7 @@ pub fn sample_reference_scene(frame: u64) -> ReferenceSceneState {
         first_card_reveal_width_px: render::first_card_reveal_width_px(frame),
         credits_left_x_px: render::credits_left_x_px(frame),
         second_badge,
+        mid_video_cta,
         cta,
         outro,
     }
@@ -184,6 +200,19 @@ mod tests {
         assert!(overshoot.second_badge.transform.unwrap().scale > 1.52);
         let settled = sample_reference_scene(300);
         assert!((settled.second_badge.transform.unwrap().scale - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn mid_video_subscribe_misc_is_not_dropped() {
+        assert!(!sample_reference_scene(2_930).mid_video_cta.visible);
+        let first = sample_reference_scene(2_931).mid_video_cta;
+        assert!(first.visible);
+        assert_eq!(first.red_bbox.unwrap().width, 12);
+        assert_eq!(sample_reference_scene(2_976).mid_video_cta.red_bbox.unwrap().width, 462);
+        assert_eq!(sample_reference_scene(3_118).mid_video_cta.red_bbox.unwrap().width, 203);
+        assert!(sample_reference_scene(3_185).mid_video_cta.visible);
+        assert!(sample_reference_scene(3_185).mid_video_cta.red_bbox.is_none());
+        assert!(!sample_reference_scene(3_186).mid_video_cta.visible);
     }
 
     #[test]
