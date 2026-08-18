@@ -21,3 +21,6 @@ watchcompare-scene = { path = "../crates/watchcompare-scene" }
 watchcompare-project = { path = "../crates/watchcompare-project" }
 watchcompare-compositor = { path = "../crates/watchcompare-compositor" }
 watchcompare-export = { path = "../crates/watchcompare-export" }
+
+[target.'cfg(target_os = "android")'.dependencies]
+watchcompare-android-encoder = { path = "../crates/watchcompare-android-encoder" }
