@@ -1,0 +1,10 @@
+[package]
+name = "watchcompare-scene"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+watchcompare-render = { path = "../watchcompare-render" }
+watchcompare-fixtures = { path = "../watchcompare-fixtures" }
