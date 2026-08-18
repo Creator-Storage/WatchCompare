@@ -48,6 +48,70 @@ pub const SECOND_BADGE_SHINE_GONE_FRAME: u64 = 252;
 pub const OUTRO_FADE_FIRST_FRAME: u64 = 12_180;
 pub const OUTRO_BLACK_FIRST_FRAME: u64 = 12_258;
 
+/// Exact measured title-panel reveal width for card 1, frames 0..=89.
+/// Values are source pixels at row y=924. The card remains at 480 px after
+/// this fixture interval.
+pub const FIRST_CARD_REVEAL_WIDTH_PX: [u16; 90] = [
+    0, 0, 0, 0, 0, 9, 12, 17, 22, 29, 37, 47, 60, 75, 93, 114, 137, 160,
+    183, 204, 224, 242, 258, 273, 286, 298, 310, 320, 330, 339, 348, 355, 363,
+    370, 376, 382, 388, 394, 399, 404, 408, 413, 417, 421, 424, 428, 431, 434,
+    437, 440, 443, 446, 448, 450, 453, 455, 457, 459, 460, 462, 464, 465, 467,
+    468, 469, 470, 471, 472, 473, 474, 475, 476, 476, 477, 477, 478, 478, 479,
+    479, 479, 479, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480,
+];
+
+/// Card-train x translation measured from the separator that is stationary at
+/// x=960 through frame 523. Values are in half-source-pixels for frames
+/// 523..=630, preserving the decoded raster's 0.5 px edge positions.
+pub const INTRO_PAN_TRACK_START_FRAME: u64 = 523;
+pub const INTRO_PAN_HALF_PX: [i16; 108] = [
+    0, -1, -1, -3, -3, -5, -7, -9, -11, -13, -16, -18, -22, -25, -27, -32,
+    -35, -40, -43, -45, -51, -55, -61, -64, -67, -75, -78, -85, -89, -93,
+    -100, -104, -112, -116, -121, -129, -133, -141, -146, -151, -159, -164,
+    -173, -178, -183, -192, -197, -207, -211, -217, -227, -231, -242, -247,
+    -252, -263, -268, -278, -283, -289, -299, -305, -316, -321, -327, -338,
+    -343, -355, -360, -366, -377, -383, -394, -400, -405, -417, -423, -434,
+    -439, -445, -457, -463, -474, -479, -485, -497, -502, -513, -519, -524,
+    -535, -541, -551, -556, -561, -571, -575, -584, -587, -590, -596, -599,
+    -605, -609, -612, -618, -621, -627,
+];
+
+/// Credits overlay left edge for frames 396..=428. Frame 429 is the first
+/// frame with no detected credits panel at the tracked row.
+pub const CREDITS_EDGE_TRACK_START_FRAME: u64 = 396;
+pub const CREDITS_LEFT_X_PX: [u16; 33] = [
+    1703, 1717, 1730, 1741, 1752, 1762, 1771, 1779, 1788, 1795, 1800, 1810,
+    1816, 1822, 1826, 1825, 1838, 1843, 1848, 1852, 1856, 1860, 1864, 1868,
+    1871, 1874, 1877, 1880, 1883, 1886, 1888, 1891, 1893,
+];
+
+/// Measured diagonal-shine band geometry for the second badge, frames 232..=251.
+/// `center` is the fitted band-normal coordinate; `width80` is the central 80%
+/// bright-band span in source pixels. Timing is verified; geometry remains a
+/// source-derived fixture until compositor image diffs lock the exact shader.
+pub const SECOND_BADGE_SHINE_TRACK_START_FRAME: u64 = 232;
+pub const SECOND_BADGE_SHINE_NORMAL_CENTER_PX: [f32; 20] = [
+    127.516f32, 134.185f32, 142.862f32, 151.458f32, 162.104f32, 170.791f32, 182.513f32, 201.631f32, 217.594f32, 232.1f32, 255.732f32, 275.272f32, 297.427f32, 323.617f32, 343.087f32, 367.092f32, 388.148f32, 409.323f32, 422.615f32, 441.565f32
+];
+pub const SECOND_BADGE_SHINE_WIDTH80_PX: [f32; 20] = [
+    12.2988f32, 15.6695f32, 22.9638f32, 29.5085f32, 37.0457f32, 37.4012f32, 39.9066f32, 41.3882f32, 39.3963f32, 38.8319f32, 39.6867f32, 34.3059f32, 32.1609f32, 32.0696f32, 26.8857f32, 27.4303f32, 20.9928f32, 16.1293f32, 37.0101f32, 16.6275f32
+];
+
+/// Measured normalized end-screen red-region intensity, frames 12179..=12258,
+/// quantized to 0..=10000. This is a source brightness fixture, not an assumed
+/// linear alpha curve. Frames before it are 1.0; frames after it are 0.0.
+pub const OUTRO_FADE_TRACK_START_FRAME: u64 = 12_179;
+pub const OUTRO_FADE_LEVEL_10000: [u16; 80] = [
+    10000, 9904, 9766, 9726, 9726, 9726, 9483, 9483, 9441, 9303, 9303, 9204, 9204, 9204, 8876, 8876, 8738, 8455, 8411, 8416, 7986, 7986, 7986, 7932, 7570, 7570, 7430, 7239, 7239, 7101, 6918, 6816, 6580, 6580, 6351, 6351, 6157, 6157, 6017, 5833, 5643, 5599, 5360, 5360, 5360, 5223, 4753, 4753, 4709, 4615, 4475, 4279, 4279, 4139, 3906, 3906, 3763, 3670, 3527, 3389, 3296, 3204, 3066, 3013, 2777, 2777, 2639, 2499, 2116, 2261, 2030, 1976, 1840, 1700, 1556, 1411, 1273, 1035, 705, 0
+];
+
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct ShineSample {
+    pub normal_center_px: f32,
+    pub width80_px: f32,
+}
+
 /// Geometry measured directly from steady-state frames in the supplied reference.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct ReferenceGeometry {
@@ -173,6 +237,70 @@ pub fn seconds_to_frame(seconds: f64) -> u64 {
     (seconds.max(0.0) * REFERENCE_FPS).round() as u64
 }
 
+
+/// Exact source-frame first-card reveal width measured at the title-panel row.
+pub fn first_card_reveal_width_px(frame: u64) -> u16 {
+    FIRST_CARD_REVEAL_WIDTH_PX
+        .get(frame as usize)
+        .copied()
+        .unwrap_or(480)
+}
+
+/// Exact measured card-train x position through the intro pan, then a continuous
+/// cruise extension anchored to the last measured intro frame.
+pub fn measured_card_train_x_px(frame: u64) -> f64 {
+    if frame <= INTRO_PAN_TRACK_START_FRAME {
+        return 0.0;
+    }
+
+    if frame <= INTRO_PAN_SETTLED_FRAME {
+        let index = (frame - INTRO_PAN_TRACK_START_FRAME) as usize;
+        return INTRO_PAN_HALF_PX[index] as f64 / 2.0;
+    }
+
+    let anchor = INTRO_PAN_HALF_PX[INTRO_PAN_HALF_PX.len() - 1] as f64 / 2.0;
+    let elapsed_frames = frame - INTRO_PAN_SETTLED_FRAME;
+    anchor - ReferenceMotion::default().steady_scroll_px_per_frame * elapsed_frames as f64
+}
+
+/// Returns the measured credits-overlay left edge. `None` means the panel is
+/// fully gone at the tracked row. Before retraction it is stationary at x=1431.
+pub fn credits_left_x_px(frame: u64) -> Option<u16> {
+    if frame < CREDITS_RETRACT_START_FRAME {
+        return Some(1431);
+    }
+    if frame >= CREDITS_GONE_FRAME {
+        return None;
+    }
+    let index = (frame - CREDITS_EDGE_TRACK_START_FRAME) as usize;
+    CREDITS_LEFT_X_PX.get(index).copied()
+}
+
+/// Returns the consecutive-frame fitted shine-band geometry for the second badge.
+pub fn second_badge_shine_sample(frame: u64) -> Option<ShineSample> {
+    if !(SECOND_BADGE_SHINE_TRACK_START_FRAME..SECOND_BADGE_SHINE_GONE_FRAME).contains(&frame) {
+        return None;
+    }
+    let index = (frame - SECOND_BADGE_SHINE_TRACK_START_FRAME) as usize;
+    Some(ShineSample {
+        normal_center_px: SECOND_BADGE_SHINE_NORMAL_CENTER_PX[index],
+        width80_px: SECOND_BADGE_SHINE_WIDTH80_PX[index],
+    })
+}
+
+/// Returns the measured end-screen fade brightness fixture on the exact source frame.
+/// This intentionally preserves plateaus and compression/raster steps from the source.
+pub fn outro_fade_level(frame: u64) -> f64 {
+    if frame < OUTRO_FADE_TRACK_START_FRAME {
+        return 1.0;
+    }
+    let index = (frame - OUTRO_FADE_TRACK_START_FRAME) as usize;
+    OUTRO_FADE_LEVEL_10000
+        .get(index)
+        .map(|value| *value as f64 / 10_000.0)
+        .unwrap_or(0.0)
+}
+
 /// Samples the currently verified steady-state motion model on the exact source
 /// frame clock. The intro/card reveal and outro curves are intentionally isolated
 /// until their per-frame measurements are promoted to renderer fixtures.
@@ -185,8 +313,8 @@ pub fn sample_reference_frame(frame: u64) -> FrameState {
 
     // The every-frame separator pass shows the intro pan begins at frame 524
     // (8733.333 ms), overshoots cruise speed, and has settled around the normal
-    // scroll rate by about frame 630 (10500 ms). Until the measured pan curve is
-    // installed, keep all of it in Intro instead of pretending it is linear.
+    // scroll rate by about frame 630 (10500 ms). The measured half-pixel lookup
+    // above is used directly through that settle frame rather than a generic easing.
     let stage = if frame < INTRO_PAN_SETTLED_FRAME {
         TimelineStage::Intro
     } else if time_seconds < 194.0 {
@@ -197,7 +325,7 @@ pub fn sample_reference_frame(frame: u64) -> FrameState {
         TimelineStage::Fade
     };
 
-    let x = -profile.motion.steady_scroll_px_per_frame * frame as f64;
+    let x = measured_card_train_x_px(frame);
     let pitch = profile.geometry.card_pitch_px;
     let card_phase_px = ((x % pitch) + pitch) % pitch;
 
@@ -276,4 +404,44 @@ mod tests {
         assert_eq!(sample_reference_frame(OUTRO_FADE_FIRST_FRAME - 1).stage, TimelineStage::Outro);
         assert_eq!(sample_reference_frame(OUTRO_FADE_FIRST_FRAME).stage, TimelineStage::Fade);
     }
+
+    #[test]
+    fn first_card_reveal_uses_measured_source_widths() {
+        assert_eq!(first_card_reveal_width_px(4), 0);
+        assert_eq!(first_card_reveal_width_px(5), 9);
+        assert_eq!(first_card_reveal_width_px(30), 348);
+        assert_eq!(first_card_reveal_width_px(81), 480);
+        assert_eq!(first_card_reveal_width_px(500), 480);
+    }
+
+    #[test]
+    fn intro_pan_uses_exact_half_pixel_track_and_continuous_cruise_anchor() {
+        assert_eq!(measured_card_train_x_px(523), 0.0);
+        assert_eq!(measured_card_train_x_px(524), -0.5);
+        assert_eq!(measured_card_train_x_px(598), -208.5);
+        assert_eq!(measured_card_train_x_px(630), -313.5);
+        let next = measured_card_train_x_px(631);
+        assert!((next - (-313.5 - ReferenceMotion::default().steady_scroll_px_per_frame)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn credits_exit_uses_measured_source_edges() {
+        assert_eq!(credits_left_x_px(395), Some(1431));
+        assert_eq!(credits_left_x_px(396), Some(1703));
+        assert_eq!(credits_left_x_px(411), Some(1825));
+        assert_eq!(credits_left_x_px(428), Some(1893));
+        assert_eq!(credits_left_x_px(429), None);
+    }
+    #[test]
+    fn shine_and_fade_use_consecutive_frame_fixtures() {
+        assert!(second_badge_shine_sample(231).is_none());
+        let shine = second_badge_shine_sample(234).unwrap();
+        assert!((shine.normal_center_px - 142.862_32).abs() < 1e-4);
+        assert!(second_badge_shine_sample(252).is_none());
+        assert_eq!(outro_fade_level(12_179), 1.0);
+        assert!((outro_fade_level(12_180) - 0.9904).abs() < 0.0001);
+        assert_eq!(outro_fade_level(12_258), 0.0);
+        assert_eq!(outro_fade_level(12_266), 0.0);
+    }
+
 }
