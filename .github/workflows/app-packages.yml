@@ -16,6 +16,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2.11" --locked
+      - name: Generate Tauri icons
+        run: cargo tauri icon src-tauri/icons/icon.png
       - name: Build Windows installer
         run: cargo tauri build --bundles nsis
       - name: Upload Windows installer
@@ -49,6 +51,8 @@ jobs:
           echo "Using NDK: $NDK_DIR"
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2.11" --locked
+      - name: Generate Tauri icons
+        run: cargo tauri icon src-tauri/icons/icon.png
       - name: Initialize Android project
         run: cargo tauri android init --ci
       - name: Build debug APK
