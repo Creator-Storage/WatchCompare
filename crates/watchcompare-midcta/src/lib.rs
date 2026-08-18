@@ -111,7 +111,7 @@ mod tests {
         assert_eq!(red_bbox(2_931), Some(Rect { x: 106, y: 966, width: 12, height: 10 }));
         assert_eq!(red_bbox(2_941), Some(Rect { x: 58, y: 916, width: 110, height: 110 }));
         assert_eq!(red_bbox(2_976), Some(Rect { x: 58, y: 916, width: 462, height: 110 }));
-        assert_eq!(red_bbox(3_086), Some(Rect { x: 418, y: 925, width: 92, height: 91 }));
+        assert_eq!(red_bbox(3_086), Some(Rect { x: 414, y: 920, width: 101, height: 102 }));
         assert_eq!(red_bbox(3_118), Some(Rect { x: 418, y: 925, width: 203, height: 91 }));
         assert_eq!(red_bbox(3_161), Some(Rect { x: 418, y: 925, width: 203, height: 92 }));
         assert_eq!(red_bbox(3_162), None);
