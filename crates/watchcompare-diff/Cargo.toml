@@ -1,0 +1,10 @@
+[package]
+name = "watchcompare-diff"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
+serde.workspace = true
+serde_json.workspace = true
