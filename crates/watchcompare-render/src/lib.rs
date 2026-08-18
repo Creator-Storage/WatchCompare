@@ -13,6 +13,41 @@ pub const REFERENCE_TIME_BASE_DEN: u64 = 15_360;
 pub const REFERENCE_TICKS_PER_FRAME: u64 = 256;
 pub const REFERENCE_FRAME_DURATION_MILLIS: f64 = 50.0 / 3.0;
 
+/// Canonical red badge raster measured from a stable, shine-free first-badge frame.
+/// Coordinates are relative to the component's top-left raster extent.
+pub const BADGE_CANONICAL_RED_WIDTH: u32 = 298;
+pub const BADGE_CANONICAL_RED_HEIGHT: u32 = 344;
+pub const BADGE_CANONICAL_VERTICES: [(i32, i32); 6] = [
+    (148, 0),
+    (2, 84),
+    (0, 255),
+    (151, 343),
+    (297, 257),
+    (297, 84),
+];
+
+/// Exact source-frame events measured from consecutive decoded frames.
+pub const FIRST_BADGE_FIRST_VISIBLE_FRAME: u64 = 34; // 566.666... ms
+pub const SECOND_CARD_FIRST_VISIBLE_FRAME: u64 = 125; // 2083.333... ms
+pub const THIRD_CARD_FIRST_VISIBLE_FRAME: u64 = 244; // 4066.666... ms
+pub const CREDITS_RETRACT_START_FRAME: u64 = 396; // 6600 ms
+pub const CREDITS_GONE_FRAME: u64 = 429; // 7150 ms
+pub const INTRO_PAN_FIRST_MOVING_FRAME: u64 = 524; // 8733.333... ms
+pub const INTRO_PAN_SETTLED_FRAME: u64 = 630; // about 10500 ms
+
+/// Second-badge diagonal-shine window. The broad soft band has a faint lead-in
+/// before the strong interval and is visually gone by frame 252.
+pub const SECOND_BADGE_SHINE_FAINT_START_FRAME: u64 = 232;
+pub const SECOND_BADGE_SHINE_STRONG_START_FRAME: u64 = 234;
+pub const SECOND_BADGE_SHINE_STRONG_END_FRAME: u64 = 249;
+pub const SECOND_BADGE_SHINE_GONE_FRAME: u64 = 252;
+
+/// The end-screen remains at full measured brightness through frame 12179.
+/// Its first fading source image is frame 12180 (203000 ms), and the tracked
+/// end-screen red region is fully black from frame 12258 onward.
+pub const OUTRO_FADE_FIRST_FRAME: u64 = 12_180;
+pub const OUTRO_BLACK_FIRST_FRAME: u64 = 12_258;
+
 /// Geometry measured directly from steady-state frames in the supplied reference.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct ReferenceGeometry {
@@ -94,7 +129,7 @@ impl Default for ReferenceProfile {
             duration_seconds: REFERENCE_DURATION_SECONDS,
             geometry: ReferenceGeometry::default(),
             motion: ReferenceMotion::default(),
-            status: "measurement_pass_2_exact_pts",
+            status: "measurement_pass_3_exact_intro_badge_outro_fade",
         }
     }
 }
@@ -152,11 +187,11 @@ pub fn sample_reference_frame(frame: u64) -> FrameState {
     // (8733.333 ms), overshoots cruise speed, and has settled around the normal
     // scroll rate by about frame 630 (10500 ms). Until the measured pan curve is
     // installed, keep all of it in Intro instead of pretending it is linear.
-    let stage = if frame < 630 {
+    let stage = if frame < INTRO_PAN_SETTLED_FRAME {
         TimelineStage::Intro
     } else if time_seconds < 194.0 {
         TimelineStage::Cruise
-    } else if time_seconds < 202.8 {
+    } else if frame < OUTRO_FADE_FIRST_FRAME {
         TimelineStage::Outro
     } else {
         TimelineStage::Fade
@@ -211,5 +246,34 @@ mod tests {
     fn measured_intro_pan_stays_out_of_cruise_until_frame_630() {
         assert_eq!(sample_reference_frame(629).stage, TimelineStage::Intro);
         assert_eq!(sample_reference_frame(630).stage, TimelineStage::Cruise);
+    }
+
+    #[test]
+    fn measured_intro_events_land_on_exact_source_clock() {
+        assert!((frame_to_millis(FIRST_BADGE_FIRST_VISIBLE_FRAME) - 566.666_666_666_666_6).abs() < 1e-9);
+        assert!((frame_to_millis(SECOND_CARD_FIRST_VISIBLE_FRAME) - 2083.333_333_333_333_5).abs() < 1e-9);
+        assert!((frame_to_millis(THIRD_CARD_FIRST_VISIBLE_FRAME) - 4066.666_666_666_666_5).abs() < 1e-9);
+        assert_eq!(frame_to_millis(CREDITS_RETRACT_START_FRAME), 6600.0);
+        assert_eq!(frame_to_millis(CREDITS_GONE_FRAME), 7150.0);
+    }
+
+    #[test]
+    fn canonical_badge_polygon_fits_measured_raster_extent() {
+        for (x, y) in BADGE_CANONICAL_VERTICES {
+            assert!(x >= 0 && x < BADGE_CANONICAL_RED_WIDTH as i32);
+            assert!(y >= 0 && y < BADGE_CANONICAL_RED_HEIGHT as i32);
+        }
+        assert_eq!(BADGE_CANONICAL_VERTICES[0], (148, 0));
+        assert_eq!(BADGE_CANONICAL_VERTICES[3], (151, 343));
+    }
+
+    #[test]
+    fn shine_and_fade_windows_use_exact_source_frames() {
+        assert_eq!(frame_to_millis(SECOND_BADGE_SHINE_STRONG_START_FRAME), 3900.0);
+        assert_eq!(frame_to_millis(SECOND_BADGE_SHINE_STRONG_END_FRAME), 4150.0);
+        assert_eq!(frame_to_millis(OUTRO_FADE_FIRST_FRAME), 203000.0);
+        assert_eq!(frame_to_millis(OUTRO_BLACK_FIRST_FRAME), 204300.0);
+        assert_eq!(sample_reference_frame(OUTRO_FADE_FIRST_FRAME - 1).stage, TimelineStage::Outro);
+        assert_eq!(sample_reference_frame(OUTRO_FADE_FIRST_FRAME).stage, TimelineStage::Fade);
     }
 }
