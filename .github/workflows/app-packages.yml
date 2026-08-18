@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Generate Tauri icons
-        run: npx --yes @tauri-apps/cli@2.11.4 icon src-tauri/icons/icon.png
+        run: npx --yes @tauri-apps/cli@2.11.4 icon src-tauri/icons/source.svg
       - name: Build Windows installer
         run: npx --yes @tauri-apps/cli@2.11.4 build --bundles nsis
       - name: Upload Windows installer
@@ -48,7 +48,7 @@ jobs:
           echo "ANDROID_NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
           echo "Using NDK: $NDK_DIR"
       - name: Generate Tauri icons
-        run: npx --yes @tauri-apps/cli@2.11.4 icon src-tauri/icons/icon.png
+        run: npx --yes @tauri-apps/cli@2.11.4 icon src-tauri/icons/source.svg
       - name: Initialize Android project
         run: npx --yes @tauri-apps/cli@2.11.4 android init --ci
       - name: Build debug APK
