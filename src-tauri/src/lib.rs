@@ -9,10 +9,16 @@ use std::sync::{
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::State;
 use watchcompare_compositor::{load_font_file, render_project_png};
-use watchcompare_export::{export_frames, export_mp4, ExportProgress};
+use watchcompare_export::{export_mp4, ExportProgress};
 use watchcompare_project::Project;
 use watchcompare_render::{sample_reference_frame, FrameState, ReferenceProfile};
 use watchcompare_scene::{sample_reference_scene, ReferenceSceneState};
+
+#[cfg(target_os = "android")]
+use watchcompare_android_encoder::{
+    AndroidEncoderExt, BeginRequest as AndroidBeginRequest,
+    FinishRequest as AndroidFinishRequest, PushFrameRequest as AndroidPushFrameRequest,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlatformInfo {
@@ -65,7 +71,12 @@ fn platform_info() -> PlatformInfo {
     PlatformInfo {
         os: std::env::consts::OS.into(),
         mobile: cfg!(target_os = "android") || cfg!(target_os = "ios"),
-        mp4_encoder: if cfg!(target_os = "android") { "frames" } else { "ffmpeg" }.into(),
+        mp4_encoder: if cfg!(target_os = "android") {
+            "android-mediacodec-h264"
+        } else {
+            "ffmpeg-libx264"
+        }
+        .into(),
     }
 }
 
@@ -121,15 +132,116 @@ fn suggested_project_path(project: Project) -> String {
 
 #[tauri::command]
 fn suggested_export_path(project: Project) -> String {
-    let extension = if cfg!(target_os = "android") { "frames" } else { "mp4" };
     default_output_dir()
-        .join(format!("{}.{}", safe_name(&project.name), extension))
+        .join(format!("{}.mp4", safe_name(&project.name)))
         .to_string_lossy()
         .into_owned()
 }
 
+#[cfg(target_os = "android")]
+fn export_android_mp4<R, F, C>(
+    app: &tauri::AppHandle<R>,
+    project: &Project,
+    scratch_root: &Path,
+    output: &Path,
+    mut progress: F,
+    mut cancelled: C,
+) -> Result<(), String>
+where
+    R: tauri::Runtime,
+    F: FnMut(ExportProgress),
+    C: FnMut() -> bool,
+{
+    project.validate()?;
+    std::fs::create_dir_all(scratch_root)
+        .map_err(|e| format!("create {}: {e}", scratch_root.display()))?;
+    if let Some(parent) = output.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("create {}: {e}", parent.display()))?;
+    }
+
+    let frame_path = scratch_root.join(format!("watchcompare-frame-{}.png", timestamp_nanos()));
+    let output_path = output.to_string_lossy().into_owned();
+    let total = project.duration_frames();
+    let encoder = app.android_encoder();
+    encoder.begin(AndroidBeginRequest {
+        output_path,
+        width: project.export.width,
+        height: project.export.height,
+        fps: project.export.fps,
+        bitrate: project.export.video_bitrate_mbps.max(1) * 1_000_000,
+        frame_count: total,
+    })?;
+
+    let font = project
+        .font_path
+        .as_deref()
+        .and_then(|path| load_font_file(path).ok());
+    let report_every = (project.export.fps.max(1) as u64 / 4).max(1);
+
+    let result = (|| {
+        for frame in 0..total {
+            if cancelled() {
+                let _ = encoder.cancel();
+                return Err("export cancelled".into());
+            }
+
+            let png = render_project_png(project, frame, font.as_ref())?;
+            std::fs::write(&frame_path, png)
+                .map_err(|e| format!("write {}: {e}", frame_path.display()))?;
+            encoder.push_frame(AndroidPushFrameRequest {
+                path: frame_path.to_string_lossy().into_owned(),
+                frame_index: frame,
+            })?;
+
+            if frame == 0 || frame + 1 == total || (frame + 1) % report_every == 0 {
+                progress(ExportProgress {
+                    completed_frames: frame + 1,
+                    total_frames: total,
+                    fraction: (frame + 1) as f32 / total.max(1) as f32,
+                    stage: "Rendering + hardware encoding".into(),
+                });
+            }
+        }
+
+        if cancelled() {
+            let _ = encoder.cancel();
+            return Err("export cancelled".into());
+        }
+
+        progress(ExportProgress {
+            completed_frames: total,
+            total_frames: total,
+            fraction: 0.995,
+            stage: "Finalizing MP4".into(),
+        });
+        encoder.finish(AndroidFinishRequest {
+            soundtrack_path: project.export.soundtrack_path.clone(),
+            audio_bitrate: project.export.audio_bitrate_kbps.max(64) * 1_000,
+        })?;
+        progress(ExportProgress {
+            completed_frames: total,
+            total_frames: total,
+            fraction: 1.0,
+            stage: "Complete".into(),
+        });
+        Ok(())
+    })();
+
+    let _ = std::fs::remove_file(&frame_path);
+    if result.is_err() {
+        let _ = encoder.cancel();
+    }
+    result
+}
+
 #[tauri::command]
-fn export_start(state: State<'_, AppState>, mut project: Project, output_path: String) -> Result<String, String> {
+fn export_start(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    mut project: Project,
+    output_path: String,
+) -> Result<String, String> {
     project.validate()?;
     if project.font_path.is_none() {
         project.font_path = default_platform_font().map(|p| p.to_string_lossy().into_owned());
@@ -150,7 +262,10 @@ fn export_start(state: State<'_, AppState>, mut project: Project, output_path: S
     let cancel = Arc::new(AtomicBool::new(false));
     state.jobs.lock().map_err(|_| "export job lock poisoned")?.insert(
         id.clone(),
-        ExportJob { status: status.clone(), cancel: cancel.clone() },
+        ExportJob {
+            status: status.clone(),
+            cancel: cancel.clone(),
+        },
     );
 
     std::thread::spawn(move || {
@@ -165,23 +280,48 @@ fn export_start(state: State<'_, AppState>, mut project: Project, output_path: S
         let scratch = std::env::temp_dir().join("watchcompare-export");
         let _ = std::fs::create_dir_all(&scratch);
         let output = PathBuf::from(&output_path);
-        let result = if cfg!(target_os = "android") {
-            export_frames(&project, &output, update, || cancel.load(Ordering::Relaxed))
-        } else {
-            export_mp4(&project, &scratch, &output, update, || cancel.load(Ordering::Relaxed))
-        };
+
+        #[cfg(target_os = "android")]
+        let result = export_android_mp4(
+            &app,
+            &project,
+            &scratch,
+            &output,
+            update,
+            || cancel.load(Ordering::Relaxed),
+        );
+
+        #[cfg(not(target_os = "android"))]
+        let result = export_mp4(
+            &project,
+            &scratch,
+            &output,
+            update,
+            || cancel.load(Ordering::Relaxed),
+        );
 
         if let Ok(mut current) = status.lock() {
             current.done = true;
-            current.cancelled = cancel.load(Ordering::Relaxed) || matches!(result.as_deref(), Err("export cancelled"));
+            current.cancelled = cancel.load(Ordering::Relaxed)
+                || matches!(result.as_deref(), Err("export cancelled"));
             match result {
                 Ok(()) => {
                     current.fraction = 1.0;
-                    current.stage = if current.cancelled { "Cancelled".into() } else { "Complete".into() };
+                    current.stage = if current.cancelled {
+                        "Cancelled".into()
+                    } else {
+                        "Complete".into()
+                    };
                 }
                 Err(error) => {
-                    current.stage = if current.cancelled { "Cancelled".into() } else { "Failed".into() };
-                    if !current.cancelled { current.error = Some(error); }
+                    current.stage = if current.cancelled {
+                        "Cancelled".into()
+                    } else {
+                        "Failed".into()
+                    };
+                    if !current.cancelled {
+                        current.error = Some(error);
+                    }
                 }
             }
         }
@@ -193,13 +333,17 @@ fn export_start(state: State<'_, AppState>, mut project: Project, output_path: S
 #[tauri::command]
 fn export_status(state: State<'_, AppState>, id: String) -> Result<Option<ExportJobStatus>, String> {
     let jobs = state.jobs.lock().map_err(|_| "export job lock poisoned")?;
-    Ok(jobs.get(&id).and_then(|job| job.status.lock().ok().map(|status| status.clone())))
+    Ok(jobs
+        .get(&id)
+        .and_then(|job| job.status.lock().ok().map(|status| status.clone())))
 }
 
 #[tauri::command]
 fn export_cancel(state: State<'_, AppState>, id: String) -> Result<bool, String> {
     let jobs = state.jobs.lock().map_err(|_| "export job lock poisoned")?;
-    let Some(job) = jobs.get(&id) else { return Ok(false); };
+    let Some(job) = jobs.get(&id) else {
+        return Ok(false);
+    };
     job.cancel.store(true, Ordering::Relaxed);
     if let Ok(mut status) = job.status.lock() {
         status.stage = "Cancelling".into();
@@ -210,11 +354,23 @@ fn export_cancel(state: State<'_, AppState>, id: String) -> Result<bool, String>
 fn safe_name(name: &str) -> String {
     let mut result = name
         .chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') { ch } else { '-' })
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') {
+                ch
+            } else {
+                '-'
+            }
+        })
         .collect::<String>();
-    while result.contains("--") { result = result.replace("--", "-"); }
+    while result.contains("--") {
+        result = result.replace("--", "-");
+    }
     let result = result.trim_matches('-').to_string();
-    if result.is_empty() { "watchcompare".into() } else { result }
+    if result.is_empty() {
+        "watchcompare".into()
+    } else {
+        result
+    }
 }
 
 fn default_output_dir() -> PathBuf {
@@ -222,30 +378,61 @@ fn default_output_dir() -> PathBuf {
 }
 
 fn timestamp_nanos() -> u128 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|v| v.as_nanos()).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|v| v.as_nanos())
+        .unwrap_or(0)
 }
 
 fn first_existing(paths: &[&str]) -> Option<PathBuf> {
-    paths.iter().map(Path::new).find(|path| path.exists()).map(Path::to_path_buf)
+    paths
+        .iter()
+        .map(Path::new)
+        .find(|path| path.exists())
+        .map(Path::to_path_buf)
 }
 
 fn default_platform_font() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
-    { return first_existing(&[r"C:\Windows\Fonts\seguisb.ttf", r"C:\Windows\Fonts\segoeui.ttf"]); }
+    {
+        return first_existing(&[
+            r"C:\Windows\Fonts\seguisb.ttf",
+            r"C:\Windows\Fonts\segoeui.ttf",
+        ]);
+    }
     #[cfg(target_os = "android")]
-    { return first_existing(&["/system/fonts/Roboto-Medium.ttf", "/system/fonts/Roboto-Regular.ttf"]); }
+    {
+        return first_existing(&[
+            "/system/fonts/Roboto-Medium.ttf",
+            "/system/fonts/Roboto-Regular.ttf",
+        ]);
+    }
     #[cfg(target_os = "linux")]
-    { return first_existing(&["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]); }
+    {
+        return first_existing(&[
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ]);
+    }
     #[cfg(target_os = "macos")]
-    { return first_existing(&["/System/Library/Fonts/SFNS.ttf", "/System/Library/Fonts/Helvetica.ttc"]); }
+    {
+        return first_existing(&[
+            "/System/Library/Fonts/SFNS.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+        ]);
+    }
     #[allow(unreachable_code)]
     None
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .manage(AppState::default())
+    let builder = tauri::Builder::default().manage(AppState::default());
+
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(watchcompare_android_encoder::init());
+
+    builder
         .invoke_handler(tauri::generate_handler![
             reference_profile,
             sample_reference,
