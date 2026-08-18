@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use watchcompare_cursor as cursor;
 use watchcompare_fixtures as fx;
 use watchcompare_render as render;
 
@@ -20,8 +21,8 @@ pub struct CtaSceneState {
     pub underline_visible: bool,
     pub dislike_visible: bool,
     pub cursor_visible: bool,
-    /// Cursor geometry is deliberately left unlocked until every source frame can
-    /// be separated from the changing CTA raster without guessing.
+    /// Measured topmost-white-raster cursor anchor. It is deliberately not named
+    /// an OS hotspot because the fidelity target is the decoded source raster.
     pub cursor_x_px: Option<f32>,
     pub cursor_y_px: Option<f32>,
     pub like_blue_level: f32,
@@ -121,6 +122,7 @@ fn cta_bell_fill_level(frame: u64) -> f32 {
 pub fn sample_reference_scene(frame: u64) -> ReferenceSceneState {
     let base = render::sample_reference_frame(frame);
     let frame = base.frame;
+    let cursor_tip = cursor::cursor_white_tip(frame);
 
     let second_badge = BadgeSceneState {
         visible: frame >= fx::SECOND_BADGE_FIRST_VISIBLE_FRAME,
@@ -137,9 +139,9 @@ pub fn sample_reference_scene(frame: u64) -> ReferenceSceneState {
         bell_visible: frame >= fx::CTA_BELL_FIRST_VISIBLE_FRAME,
         underline_visible: frame >= fx::CTA_UNDERLINE_FIRST_VISIBLE_FRAME,
         dislike_visible: frame >= fx::CTA_DISLIKE_FIRST_VISIBLE_FRAME,
-        cursor_visible: frame >= fx::CTA_CURSOR_FIRST_VISIBLE_FRAME && frame < render::OUTRO_BLACK_FIRST_FRAME,
-        cursor_x_px: None,
-        cursor_y_px: None,
+        cursor_visible: cursor_tip.is_some(),
+        cursor_x_px: cursor_tip.map(|tip| tip.x as f32),
+        cursor_y_px: cursor_tip.map(|tip| tip.y as f32),
         like_blue_level: cta_like_blue_level(frame),
         subscribed: frame >= fx::CTA_SUBSCRIBED_FIRST_FRAME,
         subscribed_bbox: cta_subscribed_bbox(frame),
@@ -178,10 +180,8 @@ mod tests {
         assert!(first.second_badge.visible);
         assert_eq!(first.second_badge.visible_core_bbox.unwrap().width, 17);
         assert!(first.second_badge.transform.is_none());
-
         let overshoot = sample_reference_scene(174);
         assert!(overshoot.second_badge.transform.unwrap().scale > 1.52);
-
         let settled = sample_reference_scene(300);
         assert!((settled.second_badge.transform.unwrap().scale - 1.0).abs() < 0.01);
     }
@@ -198,10 +198,19 @@ mod tests {
     }
 
     #[test]
-    fn unlocked_cursor_is_explicitly_unknown() {
-        let state = sample_reference_scene(fx::CTA_CURSOR_FIRST_VISIBLE_FRAME);
-        assert!(state.cta.cursor_visible);
-        assert!(state.cta.cursor_x_px.is_none());
-        assert!(state.cta.cursor_y_px.is_none());
+    fn cursor_uses_consecutive_source_raster_track() {
+        let first = sample_reference_scene(cursor::CURSOR_FIRST_VISIBLE_FRAME);
+        assert!(first.cta.cursor_visible);
+        assert_eq!(first.cta.cursor_x_px, Some(530.0));
+        assert_eq!(first.cta.cursor_y_px, Some(221.0));
+
+        let jump = sample_reference_scene(12_078);
+        assert_eq!(jump.cta.cursor_x_px, Some(678.0));
+        assert_eq!(jump.cta.cursor_y_px, Some(123.0));
+
+        let exit = sample_reference_scene(cursor::CURSOR_TRACK_END_FRAME);
+        assert_eq!(exit.cta.cursor_x_px, Some(1003.0));
+        assert_eq!(exit.cta.cursor_y_px, Some(282.0));
+        assert!(!sample_reference_scene(cursor::CURSOR_GONE_FRAME).cta.cursor_visible);
     }
 }
