@@ -9,11 +9,14 @@ members = [
   "crates/watchcompare-midcta",
   "crates/watchcompare-scene",
   "crates/watchcompare-diff",
+  "crates/watchcompare-project",
   "crates/watchcompare-compositor",
+  "crates/watchcompare-export",
+  "crates/watchcompare-android-encoder",
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.77"
 
