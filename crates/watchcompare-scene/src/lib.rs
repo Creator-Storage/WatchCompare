@@ -16,9 +16,13 @@ pub struct BadgeSceneState {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct MidVideoCtaSceneState {
     pub visible: bool,
-    /// Exact strong-red raster geometry. It becomes None during the final
+    /// Exact tracked-red raster geometry. It becomes None during the final
     /// white/glow-only exit even though `visible` remains true.
     pub red_bbox: Option<midcta::Rect>,
+    pub phase: midcta::Phase,
+    /// The exact first/last cursor-visible source frames are locked. x/y stays
+    /// separate until every frame can be isolated from the changing CTA raster.
+    pub cursor_visible: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -145,6 +149,8 @@ pub fn sample_reference_scene(frame: u64) -> ReferenceSceneState {
     let mid_video_cta = MidVideoCtaSceneState {
         visible: midcta::visible(frame),
         red_bbox: midcta::red_bbox(frame),
+        phase: midcta::phase(frame),
+        cursor_visible: midcta::cursor_visible(frame),
     };
 
     let cta = CtaSceneState {
@@ -208,10 +214,19 @@ mod tests {
         let first = sample_reference_scene(2_931).mid_video_cta;
         assert!(first.visible);
         assert_eq!(first.red_bbox.unwrap().width, 12);
+        assert_eq!(first.phase, midcta::Phase::Entering);
         assert_eq!(sample_reference_scene(2_976).mid_video_cta.red_bbox.unwrap().width, 462);
+        assert_eq!(sample_reference_scene(3_061).mid_video_cta.phase, midcta::Phase::SubscribeClick);
+        assert_eq!(sample_reference_scene(3_078).mid_video_cta.phase, midcta::Phase::SubscribedMorph);
+        assert_eq!(sample_reference_scene(3_111).mid_video_cta.phase, midcta::Phase::BellClick);
         assert_eq!(sample_reference_scene(3_118).mid_video_cta.red_bbox.unwrap().width, 203);
+        assert!(!sample_reference_scene(3_027).mid_video_cta.cursor_visible);
+        assert!(sample_reference_scene(3_028).mid_video_cta.cursor_visible);
+        assert!(sample_reference_scene(3_120).mid_video_cta.cursor_visible);
+        assert!(!sample_reference_scene(3_121).mid_video_cta.cursor_visible);
         assert!(sample_reference_scene(3_185).mid_video_cta.visible);
         assert!(sample_reference_scene(3_185).mid_video_cta.red_bbox.is_none());
+        assert_eq!(sample_reference_scene(3_185).mid_video_cta.phase, midcta::Phase::GlowExit);
         assert!(!sample_reference_scene(3_186).mid_video_cta.visible);
     }
 
