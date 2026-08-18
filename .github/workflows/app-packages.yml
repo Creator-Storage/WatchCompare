@@ -14,12 +14,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2.11" --locked
       - name: Generate Tauri icons
-        run: cargo tauri icon src-tauri/icons/icon.png
+        run: npx --yes @tauri-apps/cli@2.11.4 icon src-tauri/icons/icon.png
       - name: Build Windows installer
-        run: cargo tauri build --bundles nsis
+        run: npx --yes @tauri-apps/cli@2.11.4 build --bundles nsis
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
@@ -32,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -49,14 +47,12 @@ jobs:
           echo "NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
           echo "Using NDK: $NDK_DIR"
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2.11" --locked
       - name: Generate Tauri icons
-        run: cargo tauri icon src-tauri/icons/icon.png
+        run: npx --yes @tauri-apps/cli@2.11.4 icon src-tauri/icons/icon.png
       - name: Initialize Android project
-        run: cargo tauri android init --ci
+        run: npx --yes @tauri-apps/cli@2.11.4 android init --ci
       - name: Build debug APK
-        run: cargo tauri android build --debug --apk
+        run: npx --yes @tauri-apps/cli@2.11.4 android build --debug --apk
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
