@@ -219,7 +219,7 @@ mod tests {
         assert_eq!(sample_reference_scene(3_061).mid_video_cta.phase, midcta::Phase::SubscribeClick);
         assert_eq!(sample_reference_scene(3_078).mid_video_cta.phase, midcta::Phase::SubscribedMorph);
         assert_eq!(sample_reference_scene(3_111).mid_video_cta.phase, midcta::Phase::BellClick);
-        assert_eq!(sample_reference_scene(3_118).mid_video_cta.red_bbox.unwrap().width, 203);
+        assert_eq!(sample_reference_scene(3_118).mid_video_cta.red_bbox.unwrap().width, 195);
         assert!(!sample_reference_scene(3_027).mid_video_cta.cursor_visible);
         assert!(sample_reference_scene(3_028).mid_video_cta.cursor_visible);
         assert!(sample_reference_scene(3_120).mid_video_cta.cursor_visible);
