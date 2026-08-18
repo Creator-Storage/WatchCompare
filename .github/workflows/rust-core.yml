@@ -15,5 +15,7 @@ jobs:
         run: cargo test -p watchcompare-fixtures
       - name: Test deterministic renderer
         run: cargo test -p watchcompare-render
+      - name: Test exact scene sampler
+        run: cargo test -p watchcompare-scene
       - name: Check reference CLI
         run: cargo check -p watchcompare-reference
