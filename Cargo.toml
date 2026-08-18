@@ -12,6 +12,7 @@ members = [
   "crates/watchcompare-project",
   "crates/watchcompare-compositor",
   "crates/watchcompare-export",
+  "crates/watchcompare-android-encoder",
 ]
 
 [workspace.package]
