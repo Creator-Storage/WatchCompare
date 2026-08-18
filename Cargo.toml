@@ -6,6 +6,7 @@ members = [
   "crates/watchcompare-reference",
   "crates/watchcompare-fixtures",
   "crates/watchcompare-cursor",
+  "crates/watchcompare-midcta",
   "crates/watchcompare-scene",
   "crates/watchcompare-diff",
 ]
