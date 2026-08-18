@@ -9,3 +9,4 @@ serde.workspace = true
 watchcompare-render = { path = "../watchcompare-render" }
 watchcompare-fixtures = { path = "../watchcompare-fixtures" }
 watchcompare-cursor = { path = "../watchcompare-cursor" }
+watchcompare-midcta = { path = "../watchcompare-midcta" }
