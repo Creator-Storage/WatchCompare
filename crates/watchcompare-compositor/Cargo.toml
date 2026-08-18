@@ -1,0 +1,10 @@
+[package]
+name = "watchcompare-compositor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+fontdue = "0.9"
+image = { version = "0.25", default-features = false, features = ["png"] }
+watchcompare-scene = { path = "../watchcompare-scene" }
