@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 pub const MID_CTA_FIRST_VISIBLE_FRAME: u64 = 2_931;
-pub const MID_CTA_RED_LAST_FRAME: u64 = 3_160;
+pub const MID_CTA_RED_LAST_FRAME: u64 = 3_161;
 pub const MID_CTA_LAST_VISIBLE_FRAME: u64 = 3_185;
 pub const MID_CTA_GONE_FRAME: u64 = 3_186;
 
@@ -22,9 +22,9 @@ pub struct Rect {
     pub height: u16,
 }
 
-/// Exact bounding box of strongly-red CTA raster pixels at the source frame.
-/// During the final white/glow-only exit (3161..3185) this intentionally returns
-/// None while `visible(frame)` remains true.
+/// Exact bounding box of the tracked red CTA raster at the source frame.
+/// Frame 3161 is already in the pale/glow transition but still belongs to the
+/// measured red track. Frames 3162..3185 are the final white/glow-only exit.
 pub fn red_bbox(frame: u64) -> Option<Rect> {
     if !(MID_CTA_FIRST_VISIBLE_FRAME..=MID_CTA_RED_LAST_FRAME).contains(&frame) {
         return None;
@@ -62,6 +62,8 @@ mod tests {
         assert_eq!(red_bbox(2_976), Some(Rect { x: 58, y: 916, width: 462, height: 110 }));
         assert_eq!(red_bbox(3_086), Some(Rect { x: 418, y: 925, width: 92, height: 91 }));
         assert_eq!(red_bbox(3_118), Some(Rect { x: 418, y: 925, width: 203, height: 91 }));
+        assert_eq!(red_bbox(3_161), Some(Rect { x: 418, y: 925, width: 203, height: 92 }));
+        assert_eq!(red_bbox(3_162), None);
         assert!(visible(3_185));
         assert_eq!(red_bbox(3_185), None);
         assert!(!visible(MID_CTA_GONE_FRAME));
