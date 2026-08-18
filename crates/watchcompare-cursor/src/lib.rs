@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 pub const CURSOR_FIRST_VISIBLE_FRAME: u64 = 12_007;
-pub const CURSOR_TRACK_END_FRAME: u64 = 12_180;
+pub const CURSOR_TRACK_END_FRAME: u64 = 12_202;
+pub const CURSOR_GONE_FRAME: u64 = 12_203;
 pub const CURSOR_TRACK_FRAME_COUNT: usize =
     (CURSOR_TRACK_END_FRAME - CURSOR_FIRST_VISIBLE_FRAME + 1) as usize;
 
@@ -13,11 +14,12 @@ pub struct CursorWhiteTip {
     pub y: u16,
 }
 
-/// Returns the exact topmost-white-pixel anchor measured from the decoded
-/// reference cursor raster on this source frame.
+/// Returns the measured topmost-white-raster anchor for the reference cursor.
 ///
-/// This deliberately does not claim to be the operating-system cursor hotspot.
-/// Matching the source raster is the useful invariant for the compositor.
+/// The source cursor crosses light, black and red backgrounds, then exits during
+/// the global fade. The track is taken from consecutive decoded source frames and
+/// normalized for the known fade only when necessary. This is a raster anchor,
+/// not a claim about the operating-system cursor hotspot.
 pub fn cursor_white_tip(frame: u64) -> Option<CursorWhiteTip> {
     if !(CURSOR_FIRST_VISIBLE_FRAME..=CURSOR_TRACK_END_FRAME).contains(&frame) {
         return None;
@@ -47,6 +49,9 @@ mod tests {
         assert_eq!(cursor_white_tip(12_115), Some(CursorWhiteTip { x: 854, y: 108 }));
         assert_eq!(cursor_white_tip(12_169), Some(CursorWhiteTip { x: 963, y: 110 }));
         assert_eq!(cursor_white_tip(12_180), Some(CursorWhiteTip { x: 962, y: 110 }));
-        assert_eq!(cursor_white_tip(12_181), None);
+        assert_eq!(cursor_white_tip(12_200), Some(CursorWhiteTip { x: 981, y: 189 }));
+        assert_eq!(cursor_white_tip(12_201), Some(CursorWhiteTip { x: 1003, y: 282 }));
+        assert_eq!(cursor_white_tip(12_202), Some(CursorWhiteTip { x: 1003, y: 282 }));
+        assert_eq!(cursor_white_tip(CURSOR_GONE_FRAME), None);
     }
 }
