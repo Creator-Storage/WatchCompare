@@ -7,6 +7,7 @@ rust-version.workspace = true
 [dependencies]
 fontdue = "0.9"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+watchcompare-render = { path = "../watchcompare-render" }
 watchcompare-scene = { path = "../watchcompare-scene" }
 watchcompare-midcta = { path = "../watchcompare-midcta" }
 watchcompare-project = { path = "../watchcompare-project" }
