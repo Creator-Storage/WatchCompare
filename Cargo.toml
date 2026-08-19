@@ -20,3 +20,10 @@ rust-version = "1.77"
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Debug APKs are for sideload testing, not debugger attachment. Keeping full
+# native debug symbols made the universal APK ~438 MB and can make sideloading
+# needlessly fragile. Strip symbols while retaining debug-profile semantics.
+[profile.dev]
+debug = 0
+strip = "symbols"
