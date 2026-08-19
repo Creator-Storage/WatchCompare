@@ -1,3 +1,6 @@
+mod megapack;
+mod table_import;
+
 use serde_json::{json, Value};
 use watchcompare_render::{sample_reference_frame, FrameState, ReferenceProfile, REFERENCE_FRAME_COUNT};
 use watchcompare_scene::sample_reference_scene;
@@ -50,7 +53,10 @@ pub fn run() {
             reference_profile,
             sample_reference,
             reference_scene,
-            reference_track
+            reference_track,
+            megapack::import_megapack,
+            megapack::export_megapack,
+            table_import::import_table
         ])
         .run(tauri::generate_context!())
         .expect("error while running WatchCompare");

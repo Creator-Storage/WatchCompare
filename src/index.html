@@ -1,151 +1,154 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0b0d12" />
-    <title>WatchCompare Studio</title>
-    <link rel="stylesheet" href="styles.css" />
-  </head>
-  <body>
-    <div class="app-shell">
-      <header class="app-bar">
-        <div class="brand">
-          <div class="brand-mark">WC</div>
-          <div>
-            <strong>WatchCompare</strong>
-            <span id="bridgeStatus">Loading measured timeline…</span>
-          </div>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#fff" />
+  <title>WatchCompare</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="desktop-topbar">
+    <button class="logo-button" data-view="home" aria-label="WatchCompare home"><span>W</span></button>
+    <button class="nav-pill active" data-view="home">Home</button>
+    <button class="nav-pill" data-view="data">Create</button>
+    <button class="nav-pill" data-view="audio">Soundtrack</button>
+    <button class="nav-pill" id="desktopMegapackButton">Megapacks</button>
+    <label class="search-box"><span>⌕</span><input id="desktopSearch" placeholder="Search cards" /></label>
+    <input id="desktopProjectName" class="top-project-name" value="Untitled comparison" aria-label="Project name" />
+    <button class="round-action" data-view="export" title="Export">↗</button>
+  </header>
+
+  <header class="mobile-topbar">
+    <button class="mobile-avatar" data-view="home">W</button>
+    <div><strong id="mobileTitle">WatchCompare</strong><span id="mobileSubtitle">CTS workflow · Rust renderer</span></div>
+    <button class="mobile-menu" data-view="export">⋮</button>
+  </header>
+
+  <main id="app">
+    <section id="homeView" class="view active">
+      <div class="desktop-board-head">
+        <div><h1>WatchCompare</h1><p>Comparison Timeline Studio workflow with the measured WatchCompare renderer.</p></div>
+        <button class="primary-cta" data-view="data">Create comparison</button>
+      </div>
+
+      <div class="pin-board">
+        <article class="pin pin-create" data-view="data">
+          <div class="pin-art gradient-art"><span>＋</span></div>
+          <h2>Create comparison</h2><p>Paste spreadsheet data, import CSV/XLSX, then edit cards.</p>
+        </article>
+        <article class="pin" id="homeMegapackPin">
+          <div class="pin-art megapack-art"><span>ZIP</span></div>
+          <h2>Import Megapack</h2><p>Bring in project.json or CSV plus artwork and soundtrack assets.</p>
+        </article>
+        <article class="pin" data-view="audio">
+          <div class="pin-art audio-art"><span>♫</span></div>
+          <h2>Soundtrack</h2><p>Multiple tracks, master volume, start, trim, fades and looping.</p>
+        </article>
+        <article class="pin preview-pin" data-view="preview">
+          <div class="pin-art preview-art"><canvas id="homePreview" width="480" height="270"></canvas></div>
+          <h2>Preview</h2><p id="homePreviewSummary">Measured timeline loading…</p>
+        </article>
+        <article class="pin" id="homeImportDataPin">
+          <div class="pin-art data-art"><span>CSV</span></div>
+          <h2>Import data</h2><p>CSV, TSV, TXT or XLSX. Every field can be blank.</p>
+        </article>
+        <article class="pin" data-view="export">
+          <div class="pin-art export-art"><span>↗</span></div>
+          <h2>Export & package</h2><p>Save the project, current PNG frame, or a portable Megapack.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="dataView" class="view">
+      <div class="page-head"><div><span class="eyebrow">STEP 1 · DATA</span><h1>Comparison data</h1><p>CTS-style: paste a table or import a file, then edit only what you need.</p></div><button id="addCardButton" class="primary-cta">Add card</button></div>
+      <div class="data-layout">
+        <article class="surface insert-data-card">
+          <div class="surface-head"><div><h2>Click to insert data</h2><p>First row = field names. Every following row = one card.</p></div><button id="importDataFileButton" class="tonal">Import file</button></div>
+          <textarea id="dataPaste" spellcheck="false" placeholder="Badge Value&#9;Badge Label&#9;Title&#9;Description&#10;10&#9;SECONDS OLD&#9;Breathing&#9;A baby's first breath…"></textarea>
+          <div class="data-detection"><span id="dataDetection">Paste CSV/TSV data here.</span><button id="applyDataButton" class="filled">Create cards</button></div>
+        </article>
+
+        <section class="cards-section">
+          <div class="section-title"><div><h2>Cards</h2><p id="cardCount">0 cards</p></div><label class="search-mini">⌕ <input id="cardSearch" placeholder="Search" /></label></div>
+          <div id="cardGrid" class="card-pin-grid"></div>
+        </section>
+      </div>
+    </section>
+
+    <section id="previewView" class="view preview-view">
+      <div class="page-head preview-head"><div><span class="eyebrow">STEP 2 · PREVIEW</span><h1>Reference renderer</h1><p id="rendererStatus">Loading exact source-frame track…</p></div><div class="preview-head-actions"><button id="fitPreviewButton" class="tonal">Fit</button><button id="exportFrameButton" class="filled">Export PNG</button></div></div>
+      <div class="preview-shell surface">
+        <div id="previewViewport" class="preview-viewport"><canvas id="preview" width="1920" height="1080"></canvas></div>
+        <div class="transport">
+          <button id="prevFrameButton" class="transport-button">◀</button>
+          <button id="playButton" class="play-button">▶</button>
+          <button id="nextFrameButton" class="transport-button">▶</button>
+          <input id="timeline" type="range" min="0" max="12266" value="0" step="1" />
+          <div class="time-box"><strong id="timeReadout">00:00.000</strong><span id="frameReadout">Frame 0</span></div>
         </div>
-        <input id="projectName" class="project-name" value="Untitled comparison" aria-label="Project name" />
-        <div class="app-actions">
-          <button id="newProjectButton" class="ghost">New</button>
-          <button id="importProjectButton" class="ghost">Import project</button>
-          <button id="exportProjectButton" class="ghost">Export project</button>
-          <button id="loadFontButton" class="ghost">Load font</button>
-          <button id="exportFrameButton" class="primary">Export frame PNG</button>
-        </div>
-      </header>
+      </div>
+      <div class="preview-settings pin-board compact-board">
+        <article class="pin settings-pin"><h2>Video length</h2><label class="switch-row"><span>Automatic timing</span><input id="automaticTiming" type="checkbox" checked /></label><label>Target duration<input id="customDuration" placeholder="MM:SS" disabled /></label><p id="durationSummary">CTS automatic duration</p></article>
+        <article class="pin settings-pin"><h2>Renderer</h2><dl><div><dt>Canvas</dt><dd>1920 × 1080</dd></div><div><dt>FPS</dt><dd>60</dd></div><div><dt>Card pitch</dt><dd id="pitchValue">477 px</dd></div><div><dt>State</dt><dd id="stageValue">intro</dd></div></dl></article>
+      </div>
+    </section>
 
-      <section class="workspace">
-        <aside class="cards-panel panel">
-          <div class="panel-head">
-            <div>
-              <span class="kicker">CARDS</span>
-              <h2>Comparison data</h2>
-            </div>
-            <button id="addCardButton" class="icon-button" title="Add card">＋</button>
-          </div>
-          <div class="panel-actions">
-            <button id="importCsvButton">Import CSV</button>
-            <span id="cardCount">0 cards</span>
-          </div>
-          <div id="cardList" class="card-list"></div>
-        </aside>
+    <section id="audioView" class="view">
+      <div class="page-head"><div><span class="eyebrow">STEP 3 · SOUNDTRACK</span><h1>Soundtrack</h1><p>Restored from CTS: multiple trimmed, delayed, faded and loopable tracks.</p></div><button id="addAudioButton" class="primary-cta">Add audio</button></div>
+      <article class="surface master-audio-card"><div><h2>Master volume</h2><p>Applied after all tracks are mixed.</p></div><input id="masterVolume" type="range" min="0" max="1.5" step="0.01" value="1" /><strong id="masterVolumeValue">100%</strong></article>
+      <div id="audioTrackList" class="audio-track-list"></div>
+      <div id="audioEmpty" class="empty-state"><span>♫</span><h2>No soundtrack yet</h2><p>Add MP3, M4A, WAV, OGG or FLAC. Tracks follow the preview transport.</p><button class="filled" id="audioEmptyButton">Choose audio</button></div>
+    </section>
 
-        <main class="studio">
-          <div class="stage-toolbar">
-            <div class="stage-meta">
-              <span id="stageLabel">REFERENCE TIMELINE</span>
-              <strong id="frameLabel">Frame 0 · 0.000 ms</strong>
-            </div>
-            <div class="zoom-tools">
-              <button data-zoom="fit" class="active">Fit</button>
-              <button data-zoom="0.5">50%</button>
-              <button data-zoom="1">100%</button>
-            </div>
-          </div>
+    <section id="exportView" class="view">
+      <div class="page-head"><div><span class="eyebrow">STEP 4 · EXPORT</span><h1>Project & Megapack</h1><p>Portable CTS-style project packaging. The measured Rust renderer remains the rendering core.</p></div></div>
+      <div class="export-grid">
+        <article class="export-card surface"><span class="export-icon">▣</span><div><h2>Project JSON</h2><p>Open or save cards, timing and soundtrack settings.</p></div><div class="button-row"><button id="importProjectButton" class="tonal">Open project</button><button id="exportProjectButton" class="filled">Save project</button></div></article>
+        <article class="export-card surface"><span class="export-icon">ZIP</span><div><h2>Megapack</h2><p>Project + artwork + audio in one portable ZIP.</p></div><div class="button-row"><button id="importMegapackButton" class="tonal">Import</button><button id="exportMegapackButton" class="filled">Export</button></div></article>
+        <article class="export-card surface"><span class="export-icon">PNG</span><div><h2>Current frame</h2><p>Save exactly what the preview is showing.</p></div><button id="exportFrameButton2" class="filled">Export PNG</button></article>
+        <article class="export-card surface muted-card"><span class="export-icon">MP4</span><div><h2>Video export</h2><p>The UI is restored, but this stays disabled until the Rust video encoder path is actually finished.</p></div><button disabled>Renderer export pending</button></article>
+      </div>
+    </section>
+  </main>
 
-          <div id="stageScroller" class="stage-scroller">
-            <div id="canvasWrap" class="canvas-wrap">
-              <canvas id="preview" width="1920" height="1080"></canvas>
-              <div id="emptyCanvasState" class="canvas-empty">
-                <strong>No cards yet</strong>
-                <span>Add a card or import a CSV. This is the actual editor canvas.</span>
-              </div>
-            </div>
-          </div>
+  <nav class="mobile-bottom-nav">
+    <button class="active" data-view="home"><span>⌂</span><small>Home</small></button>
+    <button data-view="data"><span>▦</span><small>Data</small></button>
+    <button data-view="preview"><span>▶</span><small>Preview</small></button>
+    <button data-view="audio"><span>♫</span><small>Audio</small></button>
+    <button data-view="export"><span>↗</span><small>Export</small></button>
+  </nav>
 
-          <div class="transport panel">
-            <div class="transport-buttons">
-              <button id="firstFrameButton" title="First frame">|◀</button>
-              <button id="prevFrameButton" title="Previous frame">◀</button>
-              <button id="playButton" class="play" title="Play">▶</button>
-              <button id="nextFrameButton" title="Next frame">▶</button>
-              <button id="lastFrameButton" title="Last frame">▶|</button>
-            </div>
-            <input id="timeline" type="range" min="0" max="12266" value="0" step="1" />
-            <div class="transport-readout">
-              <strong id="timeReadout">00:00.000</strong>
-              <span id="stageReadout">intro</span>
-            </div>
-          </div>
-        </main>
+  <div id="cardEditor" class="editor-overlay" hidden>
+    <div class="editor-scrim" data-close-editor></div>
+    <article class="card-editor surface">
+      <div class="editor-handle"></div>
+      <div class="surface-head"><div><span class="eyebrow">CARD EDITOR</span><h2 id="cardEditorHeading">Card</h2></div><button class="icon-close" data-close-editor>×</button></div>
+      <div class="card-editor-grid">
+        <label>Badge<input id="cardBadge" /></label>
+        <label>Badge label<input id="cardBadgeSubtitle" /></label>
+        <label class="span-2">Title<input id="cardTitle" /></label>
+        <label class="span-2">Description<textarea id="cardDescription" rows="3"></textarea></label>
+        <label>Badge color<input id="cardAccent" type="color" /></label>
+        <label>Artwork background<input id="cardBackground" type="color" /></label>
+        <label class="span-2 file-row">Artwork<button id="chooseArtworkButton" type="button" class="tonal">Choose image</button><span id="artworkName">No image</span></label>
+      </div>
+      <div class="editor-actions"><button id="moveLeftButton" class="tonal">Move left</button><button id="moveRightButton" class="tonal">Move right</button><button id="duplicateCardButton" class="tonal">Duplicate</button><button id="deleteCardButton" class="danger">Delete</button></div>
+    </article>
+  </div>
 
-        <aside class="inspector panel">
-          <div class="panel-head">
-            <div>
-              <span class="kicker">INSPECTOR</span>
-              <h2 id="inspectorTitle">Card</h2>
-            </div>
-          </div>
-
-          <div id="inspectorEmpty" class="inspector-empty">
-            Select or create a card to edit it.
-          </div>
-
-          <form id="cardForm" class="card-form" hidden>
-            <label>Title
-              <input id="cardTitle" autocomplete="off" />
-            </label>
-            <label>Description
-              <textarea id="cardDescription" rows="3"></textarea>
-            </label>
-            <label>Badge
-              <input id="cardBadge" autocomplete="off" placeholder="400K" />
-            </label>
-            <label>Badge subtitle
-              <input id="cardBadgeSubtitle" autocomplete="off" placeholder="YEARS AGO" />
-            </label>
-            <div class="two-col">
-              <label>Accent
-                <input id="cardAccent" type="color" value="#d8172d" />
-              </label>
-              <label>Artwork background
-                <input id="cardBackground" type="color" value="#244c66" />
-              </label>
-            </div>
-            <label class="file-field">Artwork image
-              <button type="button" id="chooseArtworkButton">Choose image…</button>
-              <span id="artworkName">No image</span>
-            </label>
-            <div class="inspector-actions">
-              <button type="button" id="moveUpButton">Move left</button>
-              <button type="button" id="moveDownButton">Move right</button>
-              <button type="button" id="duplicateCardButton">Duplicate</button>
-              <button type="button" id="deleteCardButton" class="danger">Delete</button>
-            </div>
-          </form>
-
-          <div class="reference-readout">
-            <span class="kicker">MEASURED STATE</span>
-            <dl>
-              <div><dt>Card train X</dt><dd id="trainX">0 px</dd></div>
-              <div><dt>Pitch</dt><dd id="pitchReadout">477 px</dd></div>
-              <div><dt>Credits edge</dt><dd id="creditsReadout">—</dd></div>
-              <div><dt>Fade</dt><dd id="fadeReadout">100%</dd></div>
-            </dl>
-          </div>
-        </aside>
-      </section>
-    </div>
-
-    <input id="projectFileInput" type="file" accept="application/json,.json" hidden />
-    <input id="csvFileInput" type="file" accept="text/csv,.csv" hidden />
-    <input id="artworkFileInput" type="file" accept="image/*" hidden />
-    <input id="fontFileInput" type="file" accept=".ttf,.otf,font/ttf,font/otf" multiple hidden />
-
-    <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="app.js"></script>
-  </body>
+  <input id="dataFileInput" type="file" accept=".csv,.tsv,.txt,.xlsx,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden />
+  <input id="projectFileInput" type="file" accept=".json,application/json" hidden />
+  <input id="megapackFileInput" type="file" accept=".zip,.megapack,application/zip" hidden />
+  <input id="artworkFileInput" type="file" accept="image/*" hidden />
+  <input id="audioFileInput" type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac" multiple hidden />
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+  <script src="cts-timeline-adapter.js"></script>
+  <script src="cts-import-adapter.js"></script>
+  <script>
+    document.querySelector('#importProjectButton')?.addEventListener('click', () => document.querySelector('#projectFileInput')?.click());
+  </script>
+</body>
 </html>
