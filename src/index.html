@@ -35,7 +35,7 @@
       <div class="pin-board">
         <article class="pin pin-create" data-view="data">
           <div class="pin-art gradient-art"><span>＋</span></div>
-          <h2>Create comparison</h2><p>Paste spreadsheet data, import CSV/XLSX-style text, then edit cards.</p>
+          <h2>Create comparison</h2><p>Paste spreadsheet data, import CSV/XLSX, then edit cards.</p>
         </article>
         <article class="pin" id="homeMegapackPin">
           <div class="pin-art megapack-art"><span>ZIP</span></div>
@@ -51,7 +51,7 @@
         </article>
         <article class="pin" id="homeImportDataPin">
           <div class="pin-art data-art"><span>CSV</span></div>
-          <h2>Import data</h2><p>CSV, TSV or pasted spreadsheet cells. Every field can be blank.</p>
+          <h2>Import data</h2><p>CSV, TSV, TXT or XLSX. Every field can be blank.</p>
         </article>
         <article class="pin" data-view="export">
           <div class="pin-art export-art"><span>↗</span></div>
@@ -104,7 +104,7 @@
     <section id="exportView" class="view">
       <div class="page-head"><div><span class="eyebrow">STEP 4 · EXPORT</span><h1>Project & Megapack</h1><p>Portable CTS-style project packaging. The measured Rust renderer remains the rendering core.</p></div></div>
       <div class="export-grid">
-        <article class="export-card surface"><span class="export-icon">▣</span><div><h2>Project JSON</h2><p>Save cards, timing and soundtrack settings.</p></div><button id="exportProjectButton" class="filled">Save project</button></article>
+        <article class="export-card surface"><span class="export-icon">▣</span><div><h2>Project JSON</h2><p>Open or save cards, timing and soundtrack settings.</p></div><div class="button-row"><button id="importProjectButton" class="tonal">Open project</button><button id="exportProjectButton" class="filled">Save project</button></div></article>
         <article class="export-card surface"><span class="export-icon">ZIP</span><div><h2>Megapack</h2><p>Project + artwork + audio in one portable ZIP.</p></div><div class="button-row"><button id="importMegapackButton" class="tonal">Import</button><button id="exportMegapackButton" class="filled">Export</button></div></article>
         <article class="export-card surface"><span class="export-icon">PNG</span><div><h2>Current frame</h2><p>Save exactly what the preview is showing.</p></div><button id="exportFrameButton2" class="filled">Export PNG</button></article>
         <article class="export-card surface muted-card"><span class="export-icon">MP4</span><div><h2>Video export</h2><p>The UI is restored, but this stays disabled until the Rust video encoder path is actually finished.</p></div><button disabled>Renderer export pending</button></article>
@@ -138,12 +138,17 @@
     </article>
   </div>
 
-  <input id="dataFileInput" type="file" accept=".csv,.tsv,.txt,text/csv,text/plain" hidden />
+  <input id="dataFileInput" type="file" accept=".csv,.tsv,.txt,.xlsx,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden />
   <input id="projectFileInput" type="file" accept=".json,application/json" hidden />
   <input id="megapackFileInput" type="file" accept=".zip,.megapack,application/zip" hidden />
   <input id="artworkFileInput" type="file" accept="image/*" hidden />
   <input id="audioFileInput" type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac" multiple hidden />
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="app.js"></script>
+  <script src="cts-timeline-adapter.js"></script>
+  <script src="cts-import-adapter.js"></script>
+  <script>
+    document.querySelector('#importProjectButton')?.addEventListener('click', () => document.querySelector('#projectFileInput')?.click());
+  </script>
 </body>
 </html>
