@@ -1,12 +1,12 @@
-const $ = (selector) => document.querySelector(selector);
+const $ = (selector, root = document) => root.querySelector(selector);
+const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const invoke = window.__TAURI__?.core?.invoke;
-const canvas = $('#preview');
-const ctx = canvas.getContext('2d', { alpha: false });
-const canvasWrap = $('#canvasWrap');
-const stageScroller = $('#stageScroller');
-const emptyCanvasState = $('#emptyCanvasState');
+const preview = $('#preview');
+const ctx = preview.getContext('2d', { alpha: false });
+const homePreview = $('#homePreview');
+const homeCtx = homePreview.getContext('2d', { alpha: false });
 
-const fallbackProfile = {
+const FALLBACK_PROFILE = {
   width: 1920,
   height: 1080,
   fps: 60,
@@ -24,43 +24,122 @@ const fallbackProfile = {
   },
 };
 
+const SAMPLE_CARDS = [
+  ['10', 'SECONDS OLD', 'Breathing', "A baby's first breath requires blood flow through the heart."],
+  ['1', 'HOUR OLD', 'Suckling', 'Newborns instinctively try to feed within just hours.'],
+  ['3', 'DAYS OLD', "Recognizing Mom's Smell", 'Within days a baby can recognize a familiar scent.'],
+  ['6.5', 'MONTHS OLD', 'Recognizing Their Own Name', 'A baby turns toward their name months before speaking.'],
+  ['8', 'MONTHS OLD', 'Object Permanence', 'Objects still exist even when they are out of sight.'],
+];
+
 const state = {
-  profile: fallbackProfile,
+  profile: FALLBACK_PROFILE,
   track: [],
   scene: null,
   frame: 0,
-  selectedId: null,
   playing: false,
-  lastPlaybackTime: 0,
-  frameAccumulator: 0,
-  zoom: 'fit',
-  sceneRequestId: 0,
-  project: {
-    version: 1,
-    name: 'Untitled comparison',
-    cards: [],
-  },
+  playStartFrame: 0,
+  playStartWall: 0,
+  raf: 0,
+  selectedCardId: null,
+  imageCache: new Map(),
+  audioElements: new Map(),
+  search: '',
+  project: null,
 };
 
-const imageCache = new Map();
-let toastTimer = null;
+let toastTimer;
+let sceneRequest = 0;
 
-function uid() {
-  return globalThis.crypto?.randomUUID?.() ?? `card-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+function uid(prefix = 'item') {
+  return globalThis.crypto?.randomUUID?.() ?? `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function defaultCard(index = 0) {
+function makeCard(index = 0, values = {}) {
   return {
-    id: uid(),
-    title: `Card ${index + 1}`,
-    description: 'Description',
-    badge: String(index + 1),
-    badgeSubtitle: '',
-    accent: '#d8172d',
-    background: '#27495f',
-    artwork: null,
-    artworkName: null,
+    id: values.id || uid('card'),
+    badge: values.badge ?? values.badge_primary ?? String(index + 1),
+    badgeSubtitle: values.badgeSubtitle ?? values.badge_secondary ?? '',
+    title: values.title ?? `Card ${index + 1}`,
+    description: values.description ?? '',
+    artwork: values.artwork ?? values.image ?? null,
+    artworkName: values.artworkName ?? null,
+    accent: values.accent || '#e00000',
+    background: values.background || '#138ddb',
   };
+}
+
+function defaultProject() {
+  return {
+    version: 3,
+    name: 'Untitled comparison',
+    cards: SAMPLE_CARDS.map((row, index) => makeCard(index, {
+      badge: row[0], badgeSubtitle: row[1], title: row[2], description: row[3],
+    })),
+    settings: {
+      modelId: 'reference_locked',
+      automaticTiming: true,
+      customDuration: null,
+      soundtrackMasterVolume: 1,
+    },
+    audioTracks: [],
+  };
+}
+
+function normalizeProject(input) {
+  if (!input || typeof input !== 'object') return defaultProject();
+  const cards = Array.isArray(input.cards) ? input.cards.map((card, index) => makeCard(index, card || {})) : [];
+  const oldEmptyShell = Number(input.version || 0) < 3 && cards.length === 0;
+  if (oldEmptyShell) return defaultProject();
+  const settings = input.settings || {};
+  const audioTracks = Array.isArray(input.audioTracks)
+    ? input.audioTracks
+    : Array.isArray(input.audio_tracks) ? input.audio_tracks : [];
+  return {
+    version: 3,
+    name: String(input.name || 'Untitled comparison'),
+    cards,
+    settings: {
+      modelId: 'reference_locked',
+      automaticTiming: settings.automaticTiming ?? settings.automatic_timing ?? true,
+      customDuration: Number.isFinite(Number(settings.customDuration ?? settings.custom_duration))
+        ? Number(settings.customDuration ?? settings.custom_duration) : null,
+      soundtrackMasterVolume: Number.isFinite(Number(settings.soundtrackMasterVolume ?? settings.soundtrack_master_volume))
+        ? Math.max(0, Number(settings.soundtrackMasterVolume ?? settings.soundtrack_master_volume)) : 1,
+    },
+    audioTracks: audioTracks.map((track) => ({
+      id: track.id || uid('track'),
+      name: track.name || 'Soundtrack',
+      data: track.data || track.path || null,
+      duration: Number(track.duration || 0),
+      startTime: Number(track.startTime ?? track.start_time ?? 0),
+      trimStart: Number(track.trimStart ?? track.trim_start ?? 0),
+      trimEnd: track.trimEnd ?? track.trim_end ?? null,
+      volume: Number(track.volume ?? 1),
+      fadeIn: Number(track.fadeIn ?? track.fade_in ?? 0),
+      fadeOut: Number(track.fadeOut ?? track.fade_out ?? 0),
+      loop: Boolean(track.loop),
+    })),
+  };
+}
+
+function restoreProject() {
+  try {
+    const raw = localStorage.getItem('watchcompare.project.v3') || localStorage.getItem('watchcompare.project.v1');
+    state.project = raw ? normalizeProject(JSON.parse(raw)) : defaultProject();
+  } catch {
+    state.project = defaultProject();
+  }
+  state.selectedCardId = state.project.cards[0]?.id || null;
+}
+
+function persistProject() {
+  try {
+    const raw = JSON.stringify(state.project);
+    if (raw.length < 4_000_000) localStorage.setItem('watchcompare.project.v3', raw);
+  } catch (error) {
+    console.warn('Could not persist project', error);
+  }
 }
 
 function showToast(message) {
@@ -71,234 +150,8 @@ function showToast(message) {
   toastTimer = setTimeout(() => toast.classList.remove('show'), 2600);
 }
 
-function persistProject() {
-  try {
-    localStorage.setItem('watchcompare.project.v1', JSON.stringify(state.project));
-  } catch (error) {
-    console.warn('Could not persist project', error);
-  }
-}
-
-function restoreProject() {
-  try {
-    const raw = localStorage.getItem('watchcompare.project.v1');
-    if (!raw) return;
-    const parsed = JSON.parse(raw);
-    if (!parsed || !Array.isArray(parsed.cards)) return;
-    state.project = normalizeProject(parsed);
-    state.selectedId = state.project.cards[0]?.id ?? null;
-  } catch (error) {
-    console.warn('Could not restore project', error);
-  }
-}
-
-function normalizeProject(project) {
-  const cards = Array.isArray(project.cards) ? project.cards.map((card, index) => ({
-    ...defaultCard(index),
-    ...card,
-    id: card.id || uid(),
-    artwork: card.artwork || null,
-    artworkName: card.artworkName || null,
-  })) : [];
-  return {
-    version: 1,
-    name: String(project.name || 'Untitled comparison'),
-    cards,
-  };
-}
-
-function currentCard() {
-  return state.project.cards.find((card) => card.id === state.selectedId) || null;
-}
-
-function selectCard(id) {
-  state.selectedId = id;
-  renderCardList();
-  syncInspector();
-  renderCurrentFrame();
-}
-
-function renderCardList() {
-  const list = $('#cardList');
-  list.textContent = '';
-  $('#cardCount').textContent = `${state.project.cards.length} ${state.project.cards.length === 1 ? 'card' : 'cards'}`;
-
-  state.project.cards.forEach((card, index) => {
-    const row = document.createElement('div');
-    row.className = `card-row${card.id === state.selectedId ? ' selected' : ''}`;
-    row.addEventListener('click', () => selectCard(card.id));
-
-    const thumb = document.createElement('div');
-    thumb.className = 'card-thumb';
-    thumb.style.background = card.background;
-    if (card.artwork) {
-      const img = document.createElement('img');
-      img.src = card.artwork;
-      img.alt = '';
-      thumb.appendChild(img);
-    } else {
-      thumb.textContent = card.badge || String(index + 1);
-    }
-
-    const copy = document.createElement('div');
-    const title = document.createElement('strong');
-    title.textContent = card.title || `Card ${index + 1}`;
-    const desc = document.createElement('span');
-    desc.textContent = card.description || 'No description';
-    copy.append(title, desc);
-
-    const idx = document.createElement('div');
-    idx.className = 'card-index';
-    idx.textContent = String(index + 1).padStart(2, '0');
-
-    row.append(thumb, copy, idx);
-    list.appendChild(row);
-  });
-}
-
-function syncInspector() {
-  const card = currentCard();
-  $('#inspectorEmpty').hidden = Boolean(card);
-  $('#cardForm').hidden = !card;
-  if (!card) return;
-
-  const index = state.project.cards.findIndex((item) => item.id === card.id);
-  $('#inspectorTitle').textContent = `Card ${index + 1}`;
-  $('#cardTitle').value = card.title;
-  $('#cardDescription').value = card.description;
-  $('#cardBadge').value = card.badge;
-  $('#cardBadgeSubtitle').value = card.badgeSubtitle;
-  $('#cardAccent').value = card.accent;
-  $('#cardBackground').value = card.background;
-  $('#artworkName').textContent = card.artworkName || 'No image';
-  $('#moveUpButton').disabled = index <= 0;
-  $('#moveDownButton').disabled = index < 0 || index >= state.project.cards.length - 1;
-}
-
-function commitInspector() {
-  const card = currentCard();
-  if (!card) return;
-  card.title = $('#cardTitle').value;
-  card.description = $('#cardDescription').value;
-  card.badge = $('#cardBadge').value;
-  card.badgeSubtitle = $('#cardBadgeSubtitle').value;
-  card.accent = $('#cardAccent').value;
-  card.background = $('#cardBackground').value;
-  persistProject();
-  renderCardList();
-  renderCurrentFrame();
-}
-
-function addCard() {
-  const card = defaultCard(state.project.cards.length);
-  state.project.cards.push(card);
-  state.selectedId = card.id;
-  persistProject();
-  renderCardList();
-  syncInspector();
-  renderCurrentFrame();
-}
-
-function moveCard(delta) {
-  const index = state.project.cards.findIndex((card) => card.id === state.selectedId);
-  const target = index + delta;
-  if (index < 0 || target < 0 || target >= state.project.cards.length) return;
-  const [card] = state.project.cards.splice(index, 1);
-  state.project.cards.splice(target, 0, card);
-  persistProject();
-  renderCardList();
-  syncInspector();
-  renderCurrentFrame();
-}
-
-function duplicateCard() {
-  const card = currentCard();
-  if (!card) return;
-  const index = state.project.cards.findIndex((item) => item.id === card.id);
-  const duplicate = { ...card, id: uid(), title: `${card.title} copy` };
-  state.project.cards.splice(index + 1, 0, duplicate);
-  state.selectedId = duplicate.id;
-  persistProject();
-  renderCardList();
-  syncInspector();
-  renderCurrentFrame();
-}
-
-function deleteCard() {
-  const index = state.project.cards.findIndex((card) => card.id === state.selectedId);
-  if (index < 0) return;
-  state.project.cards.splice(index, 1);
-  state.selectedId = state.project.cards[Math.min(index, state.project.cards.length - 1)]?.id ?? null;
-  persistProject();
-  renderCardList();
-  syncInspector();
-  renderCurrentFrame();
-}
-
-function parseCsv(text) {
-  const rows = [];
-  let row = [];
-  let field = '';
-  let quoted = false;
-  for (let i = 0; i < text.length; i += 1) {
-    const ch = text[i];
-    if (quoted) {
-      if (ch === '"' && text[i + 1] === '"') {
-        field += '"';
-        i += 1;
-      } else if (ch === '"') {
-        quoted = false;
-      } else {
-        field += ch;
-      }
-    } else if (ch === '"') {
-      quoted = true;
-    } else if (ch === ',') {
-      row.push(field);
-      field = '';
-    } else if (ch === '\n') {
-      row.push(field.replace(/\r$/, ''));
-      rows.push(row);
-      row = [];
-      field = '';
-    } else {
-      field += ch;
-    }
-  }
-  row.push(field.replace(/\r$/, ''));
-  if (row.some((value) => value.length)) rows.push(row);
-  return rows;
-}
-
-function importCsvText(text) {
-  const rows = parseCsv(text);
-  if (rows.length < 2) throw new Error('CSV needs a header row and at least one data row.');
-  const headers = rows[0].map((value) => value.trim().toLowerCase().replace(/[\s_-]+/g, ''));
-  const find = (...names) => names.map((name) => headers.indexOf(name)).find((index) => index >= 0) ?? -1;
-  const titleIndex = find('title', 'name');
-  const descriptionIndex = find('description', 'desc', 'subtitle');
-  const badgeIndex = find('badge', 'value', 'year', 'rank');
-  const badgeSubtitleIndex = find('badgesubtitle', 'units', 'unit');
-  const backgroundIndex = find('background', 'backgroundcolor', 'bg');
-  const accentIndex = find('accent', 'accentcolor', 'badgecolor');
-
-  const cards = rows.slice(1).filter((row) => row.some((value) => value.trim())).map((row, index) => {
-    const card = defaultCard(index);
-    if (titleIndex >= 0) card.title = row[titleIndex]?.trim() || card.title;
-    if (descriptionIndex >= 0) card.description = row[descriptionIndex]?.trim() || '';
-    if (badgeIndex >= 0) card.badge = row[badgeIndex]?.trim() || '';
-    if (badgeSubtitleIndex >= 0) card.badgeSubtitle = row[badgeSubtitleIndex]?.trim() || '';
-    if (backgroundIndex >= 0 && /^#[0-9a-f]{6}$/i.test(row[backgroundIndex]?.trim())) card.background = row[backgroundIndex].trim();
-    if (accentIndex >= 0 && /^#[0-9a-f]{6}$/i.test(row[accentIndex]?.trim())) card.accent = row[accentIndex].trim();
-    return card;
-  });
-  state.project.cards = cards;
-  state.selectedId = cards[0]?.id ?? null;
-  persistProject();
-  renderCardList();
-  syncInspector();
-  renderCurrentFrame();
-  showToast(`Imported ${cards.length} cards from CSV.`);
+function safeFilename(value) {
+  return String(value || 'watchcompare').trim().replace(/[^a-z0-9._-]+/gi, '-').replace(/^-+|-+$/g, '') || 'watchcompare';
 }
 
 function downloadBlob(blob, filename) {
@@ -307,9 +160,9 @@ function downloadBlob(blob, filename) {
     navigator.share({ files: [file], title: filename }).catch((error) => {
       if (error?.name !== 'AbortError') fallbackDownload(blob, filename);
     });
-    return;
+  } else {
+    fallbackDownload(blob, filename);
   }
-  fallbackDownload(blob, filename);
 }
 
 function fallbackDownload(blob, filename) {
@@ -320,536 +173,744 @@ function fallbackDownload(blob, filename) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1500);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
-function safeFilename(value) {
-  return String(value || 'watchcompare').trim().replace(/[^a-z0-9._-]+/gi, '-').replace(/^-+|-+$/g, '') || 'watchcompare';
+function setView(view) {
+  $$('.view').forEach((node) => node.classList.toggle('active', node.id === `${view}View`));
+  $$('[data-view]').forEach((node) => node.classList.toggle('active', node.dataset.view === view));
+  const title = { home: 'WatchCompare', data: 'Comparison data', preview: 'Preview', audio: 'Soundtrack', export: 'Export' }[view] || 'WatchCompare';
+  $('#mobileTitle').textContent = title;
+  if (view === 'preview') renderPreview();
+  if (view === 'audio') renderAudioTracks();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function parseDelimited(text) {
+  const sample = text.slice(0, 4096);
+  const delimiter = sample.includes('\t') ? '\t' : (sample.split(';').length > sample.split(',').length ? ';' : ',');
+  const rows = [];
+  let row = [], field = '', quoted = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"' && text[i + 1] === '"') { field += '"'; i += 1; }
+      else if (ch === '"') quoted = false;
+      else field += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === delimiter) { row.push(field); field = ''; }
+    else if (ch === '\n') { row.push(field.replace(/\r$/, '')); rows.push(row); row = []; field = ''; }
+    else field += ch;
+  }
+  row.push(field.replace(/\r$/, ''));
+  if (row.some((value) => value.length)) rows.push(row);
+  return rows.filter((r) => r.some((value) => String(value).trim()));
+}
+
+function normalizedHeader(value) {
+  return String(value).trim().toLowerCase().replace(/[\s_\-/]+/g, '');
+}
+
+function cardsFromRows(rows) {
+  if (rows.length < 2) throw new Error('Add a header row and at least one card row.');
+  const headers = rows[0].map(normalizedHeader);
+  const find = (...aliases) => headers.findIndex((header) => aliases.includes(header));
+  const badge = find('badge', 'badgevalue', 'value', 'date', 'year', 'rank', 'amount', 'age');
+  const badgeLabel = find('badgelabel', 'badgesubtitle', 'unit', 'units', 'label', 'metric');
+  const title = find('title', 'name', 'heading', 'item', 'subject');
+  const description = find('description', 'desc', 'details', 'summary', 'text', 'caption');
+  const artwork = find('artwork', 'image', 'imagepath', 'imageurl', 'photo', 'picture', 'thumbnail');
+  return rows.slice(1).map((row, index) => makeCard(index, {
+    badge: badge >= 0 ? String(row[badge] || '').trim() : '',
+    badgeSubtitle: badgeLabel >= 0 ? String(row[badgeLabel] || '').trim() : '',
+    title: title >= 0 ? String(row[title] || '').trim() : '',
+    description: description >= 0 ? String(row[description] || '').trim() : '',
+    artwork: artwork >= 0 ? String(row[artwork] || '').trim() || null : null,
+    artworkName: artwork >= 0 && row[artwork] ? String(row[artwork]).split('/').pop() : null,
+  }));
+}
+
+function refreshDataDetection() {
+  const text = $('#dataPaste').value;
+  if (!text.trim()) {
+    $('#dataDetection').textContent = 'Paste CSV/TSV data here.';
+    $('#applyDataButton').disabled = true;
+    return;
+  }
+  try {
+    const rows = parseDelimited(text);
+    const cards = cardsFromRows(rows);
+    $('#dataDetection').textContent = `Ready · ${cards.length} ${cards.length === 1 ? 'card' : 'cards'} · ${rows[0].length} fields`;
+    $('#applyDataButton').disabled = cards.length === 0;
+  } catch (error) {
+    $('#dataDetection').textContent = error.message;
+    $('#applyDataButton').disabled = true;
+  }
+}
+
+function applyPastedData() {
+  try {
+    const cards = cardsFromRows(parseDelimited($('#dataPaste').value));
+    state.project.cards = cards;
+    state.selectedCardId = cards[0]?.id || null;
+    persistProject();
+    renderCards();
+    renderPreview();
+    showToast(`Created ${cards.length} cards.`);
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function importDataFile(file) {
+  const lower = file.name.toLowerCase();
+  if (lower.endsWith('.xlsx')) {
+    showToast('XLSX import is being restored in the Rust backend; use CSV/TSV in this build.');
+    return;
+  }
+  const text = await file.text();
+  $('#dataPaste').value = text;
+  refreshDataDetection();
+  applyPastedData();
+}
+
+function currentCard() {
+  return state.project.cards.find((card) => card.id === state.selectedCardId) || null;
+}
+
+function renderCards() {
+  const grid = $('#cardGrid');
+  grid.textContent = '';
+  const query = (state.search || '').trim().toLowerCase();
+  const cards = state.project.cards.filter((card) => !query || [card.title, card.description, card.badge, card.badgeSubtitle].some((v) => String(v).toLowerCase().includes(query)));
+  $('#cardCount').textContent = `${state.project.cards.length} ${state.project.cards.length === 1 ? 'card' : 'cards'}`;
+  cards.forEach((card) => {
+    const pin = document.createElement('article');
+    pin.className = 'card-pin';
+    const visual = document.createElement('div');
+    visual.className = 'card-pin-visual';
+    visual.style.background = card.background;
+    if (card.artwork) {
+      const img = document.createElement('img');
+      img.src = card.artwork;
+      visual.appendChild(img);
+    }
+    const badge = document.createElement('div');
+    badge.className = 'card-pin-badge';
+    badge.style.background = card.accent;
+    badge.textContent = card.badge || '—';
+    const small = document.createElement('small');
+    small.textContent = card.badgeSubtitle || '';
+    badge.appendChild(small);
+    visual.appendChild(badge);
+    const copy = document.createElement('div');
+    copy.className = 'card-pin-copy';
+    copy.innerHTML = `<strong></strong><span></span>`;
+    $('strong', copy).textContent = card.title || 'Untitled card';
+    $('span', copy).textContent = card.description || 'No description';
+    pin.append(visual, copy);
+    pin.addEventListener('click', () => openCardEditor(card.id));
+    grid.appendChild(pin);
+  });
+}
+
+function openCardEditor(id) {
+  state.selectedCardId = id;
+  const card = currentCard();
+  if (!card) return;
+  const index = state.project.cards.indexOf(card);
+  $('#cardEditorHeading').textContent = `Card ${index + 1}`;
+  $('#cardBadge').value = card.badge;
+  $('#cardBadgeSubtitle').value = card.badgeSubtitle;
+  $('#cardTitle').value = card.title;
+  $('#cardDescription').value = card.description;
+  $('#cardAccent').value = card.accent;
+  $('#cardBackground').value = card.background;
+  $('#artworkName').textContent = card.artworkName || 'No image';
+  $('#moveLeftButton').disabled = index === 0;
+  $('#moveRightButton').disabled = index === state.project.cards.length - 1;
+  $('#cardEditor').hidden = false;
+}
+
+function closeCardEditor() {
+  $('#cardEditor').hidden = true;
+}
+
+function commitCardEditor() {
+  const card = currentCard();
+  if (!card) return;
+  card.badge = $('#cardBadge').value;
+  card.badgeSubtitle = $('#cardBadgeSubtitle').value;
+  card.title = $('#cardTitle').value;
+  card.description = $('#cardDescription').value;
+  card.accent = $('#cardAccent').value;
+  card.background = $('#cardBackground').value;
+  persistProject();
+  renderCards();
+  renderPreview();
+}
+
+function addCard() {
+  const card = makeCard(state.project.cards.length);
+  state.project.cards.push(card);
+  state.selectedCardId = card.id;
+  persistProject();
+  renderCards();
+  openCardEditor(card.id);
+}
+
+function moveCard(delta) {
+  const card = currentCard();
+  const index = state.project.cards.indexOf(card);
+  const target = index + delta;
+  if (index < 0 || target < 0 || target >= state.project.cards.length) return;
+  state.project.cards.splice(index, 1);
+  state.project.cards.splice(target, 0, card);
+  persistProject();
+  renderCards();
+  openCardEditor(card.id);
+  renderPreview();
+}
+
+function duplicateCard() {
+  const card = currentCard();
+  if (!card) return;
+  const index = state.project.cards.indexOf(card);
+  const copy = { ...card, id: uid('card'), title: `${card.title || 'Card'} copy` };
+  state.project.cards.splice(index + 1, 0, copy);
+  state.selectedCardId = copy.id;
+  persistProject();
+  renderCards();
+  openCardEditor(copy.id);
+  renderPreview();
+}
+
+function deleteCard() {
+  const card = currentCard();
+  if (!card) return;
+  const index = state.project.cards.indexOf(card);
+  state.project.cards.splice(index, 1);
+  state.selectedCardId = state.project.cards[Math.min(index, state.project.cards.length - 1)]?.id || null;
+  persistProject();
+  closeCardEditor();
+  renderCards();
+  renderPreview();
 }
 
 function getFrameState(frame) {
-  const exact = state.track[frame];
-  if (exact) return exact;
-  const timeSeconds = frame / 60;
-  return {
+  return state.track[frame] || {
     frame,
-    time_seconds: timeSeconds,
-    time_millis: timeSeconds * 1000,
+    time_millis: frame / 60 * 1000,
+    time_seconds: frame / 60,
     stage: frame < 630 ? 'intro' : frame < 11843 ? 'cruise' : frame < 12180 ? 'outro' : 'fade',
-    card_train_x_px: frame < 630 ? 0 : -(frame - 630) * (133.47312789378643 / 60) - 313.5,
+    card_train_x_px: frame < 630 ? 0 : -313.5 - (frame - 630) * 2.224552,
     card_phase_px: 0,
   };
 }
 
-function requestDetailedScene(frame) {
-  const needsDetail = frame < 430 || frame >= 11868;
-  if (!invoke || !needsDetail) {
-    state.scene = null;
-    return;
+function easeOutCubic(t) {
+  const x = Math.max(0, Math.min(1, t));
+  return 1 - Math.pow(1 - x, 3);
+}
+
+function ensureImage(source) {
+  if (!source) return null;
+  if (state.imageCache.has(source)) {
+    const cached = state.imageCache.get(source);
+    return cached.ready ? cached.image : null;
   }
-  const requestId = ++state.sceneRequestId;
-  invoke('reference_scene', { frame }).then((scene) => {
-    if (requestId !== state.sceneRequestId || state.frame !== frame) return;
-    state.scene = scene;
-    renderCurrentFrame();
-  }).catch((error) => console.warn('reference_scene unavailable', error));
-}
-
-function setFrame(frame, requestScene = true) {
-  const max = state.profile.frame_count - 1;
-  state.frame = Math.max(0, Math.min(max, Math.round(frame)));
-  $('#timeline').value = String(state.frame);
-  const frameState = getFrameState(state.frame);
-  const millis = frameState.time_millis ?? (state.frame / state.profile.fps) * 1000;
-  $('#frameLabel').textContent = `Frame ${state.frame.toLocaleString()} · ${millis.toFixed(3)} ms`;
-  $('#timeReadout').textContent = formatTime(millis);
-  $('#stageReadout').textContent = frameState.stage;
-  $('#trainX').textContent = `${frameState.card_train_x_px.toFixed(1)} px`;
-  $('#pitchReadout').textContent = `${state.profile.geometry.card_pitch_px} px`;
-  if (requestScene) requestDetailedScene(state.frame);
-  renderCurrentFrame();
-}
-
-function formatTime(ms) {
-  const total = Math.max(0, ms);
-  const minutes = Math.floor(total / 60000);
-  const seconds = Math.floor((total % 60000) / 1000);
-  const millis = Math.floor(total % 1000);
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(millis).padStart(3, '0')}`;
-}
-
-function ensureImage(src) {
-  if (!src) return null;
-  const cached = imageCache.get(src);
-  if (cached) return cached.loaded ? cached.image : null;
   const image = new Image();
-  const record = { image, loaded: false };
-  imageCache.set(src, record);
-  image.onload = () => {
-    record.loaded = true;
-    renderCurrentFrame();
-  };
-  image.onerror = () => imageCache.delete(src);
-  image.src = src;
+  const record = { image, ready: false };
+  state.imageCache.set(source, record);
+  image.onload = () => { record.ready = true; renderPreview(); };
+  image.onerror = () => state.imageCache.delete(source);
+  image.src = source;
   return null;
 }
 
-function drawImageCover(image, x, y, width, height) {
+function drawCover(image, x, y, width, height) {
   const sourceRatio = image.width / image.height;
   const targetRatio = width / height;
   let sx = 0, sy = 0, sw = image.width, sh = image.height;
-  if (sourceRatio > targetRatio) {
-    sw = image.height * targetRatio;
-    sx = (image.width - sw) / 2;
-  } else {
-    sh = image.width / targetRatio;
-    sy = (image.height - sh) / 2;
-  }
+  if (sourceRatio > targetRatio) { sw = image.height * targetRatio; sx = (image.width - sw) / 2; }
+  else { sh = image.width / targetRatio; sy = (image.height - sh) / 2; }
   ctx.drawImage(image, sx, sy, sw, sh, x, y, width, height);
 }
 
-function drawBadge(card, x, cardWidth, index) {
-  const baseWidth = 246;
-  const baseHeight = 282;
-  let scale = 1;
-  let offsetX = 0;
-  let offsetY = 0;
-  if (index === 1 && state.scene?.second_badge_transform) {
-    scale = state.scene.second_badge_transform.scale;
-    offsetX = state.scene.second_badge_transform.x;
-    offsetY = state.scene.second_badge_transform.y;
-  }
-  const width = baseWidth * scale;
-  const height = baseHeight * scale;
-  const bx = x + (cardWidth - width) / 2 + offsetX;
-  const by = 68 + offsetY;
-
+function drawBadge(card, x, width) {
+  const bw = 246, bh = 282, bx = x + (width - bw) / 2, by = 68;
   ctx.save();
   ctx.beginPath();
-  ctx.moveTo(bx + width * 0.5, by);
-  ctx.lineTo(bx + width, by + height * 0.245);
-  ctx.lineTo(bx + width, by + height * 0.75);
-  ctx.lineTo(bx + width * 0.505, by + height);
-  ctx.lineTo(bx, by + height * 0.75);
-  ctx.lineTo(bx, by + height * 0.245);
+  ctx.moveTo(bx + bw * .5, by);
+  ctx.lineTo(bx + bw, by + bh * .245);
+  ctx.lineTo(bx + bw, by + bh * .745);
+  ctx.lineTo(bx + bw * .5, by + bh);
+  ctx.lineTo(bx, by + bh * .745);
+  ctx.lineTo(bx, by + bh * .245);
   ctx.closePath();
-  ctx.fillStyle = card.accent || '#d8172d';
+  const gradient = ctx.createLinearGradient(0, by, 0, by + bh);
+  gradient.addColorStop(0, '#eb0909');
+  gradient.addColorStop(.5, card.accent || '#e00000');
+  gradient.addColorStop(1, '#d50000');
+  ctx.fillStyle = gradient;
   ctx.fill();
-  ctx.clip();
-
-  if (index === 1 && state.scene?.second_badge_shine) {
-    const shine = state.scene.second_badge_shine;
-    ctx.save();
-    ctx.translate(bx + width / 2, by + height / 2);
-    ctx.rotate((120 * Math.PI) / 180);
-    const bandWidth = Math.max(14, shine.width80_px * 1.6);
-    const center = (shine.normal_center_px - 250) * 0.75;
-    const gradient = ctx.createLinearGradient(center - bandWidth, 0, center + bandWidth, 0);
-    gradient.addColorStop(0, 'rgba(255,255,255,0)');
-    gradient.addColorStop(.48, 'rgba(255,255,255,.1)');
-    gradient.addColorStop(.5, 'rgba(255,255,255,.75)');
-    gradient.addColorStop(.52, 'rgba(255,255,255,.1)');
-    gradient.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(center - bandWidth, -height, bandWidth * 2, height * 2);
-    ctx.restore();
-  }
-
+  ctx.strokeStyle = '#ff4545';
+  ctx.lineWidth = 2;
+  ctx.stroke();
   ctx.fillStyle = '#fff';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = `900 ${Math.max(28, 49 * scale)}px "WatchCompareUserFont", Arial, sans-serif`;
-  ctx.fillText(card.badge || '', bx + width / 2, by + height * 0.42, width * 0.84);
-  if (card.badgeSubtitle) {
-    ctx.font = `900 ${Math.max(13, 20 * scale)}px "WatchCompareUserFont", Arial, sans-serif`;
-    ctx.fillText(card.badgeSubtitle, bx + width / 2, by + height * 0.59, width * 0.82);
-  }
+  ctx.font = '900 58px Arial, sans-serif';
+  ctx.fillText(card.badge || '', bx + bw / 2, by + 117);
+  ctx.font = '900 21px Arial, sans-serif';
+  ctx.fillText(String(card.badgeSubtitle || '').toUpperCase(), bx + bw / 2, by + 166);
   ctx.restore();
 }
 
-function drawCard(card, x, index) {
-  const g = state.profile.geometry;
-  const pitch = g.card_pitch_px;
-  const separator = g.separator_nominal_px;
-  const width = pitch - separator;
-  const artHeight = g.artwork_bottom_y + 1;
-
-  if (x + pitch < 0 || x > canvas.width) return;
+function drawCard(card, x, index, frameState) {
+  const pitch = state.profile.geometry.card_pitch_px || 477;
+  const separator = 6;
+  const innerWidth = pitch - separator;
+  const introStart = 5 + index * 120;
+  if (frameState.stage === 'intro' && frameState.frame < introStart) return;
+  let reveal = 1;
+  if (frameState.stage === 'intro') reveal = easeOutCubic((frameState.frame - introStart) / 76);
+  const visibleWidth = Math.max(0, innerWidth * reveal);
+  if (visibleWidth <= 0) return;
 
   ctx.save();
   ctx.beginPath();
-  ctx.rect(x, 0, width, canvas.height);
+  ctx.rect(x, 0, visibleWidth, 1080);
   ctx.clip();
-
-  ctx.fillStyle = card.background || '#27495f';
-  ctx.fillRect(x, 0, width, artHeight);
+  const artH = 872;
+  ctx.fillStyle = card.background || '#138ddb';
+  ctx.fillRect(x, 0, innerWidth, artH);
   const image = ensureImage(card.artwork);
-  if (image) {
-    drawImageCover(image, x, 0, width, artHeight);
-  } else {
-    const gradient = ctx.createLinearGradient(x, 0, x + width, artHeight);
-    gradient.addColorStop(0, 'rgba(255,255,255,.04)');
-    gradient.addColorStop(.5, 'rgba(0,0,0,0)');
-    gradient.addColorStop(1, 'rgba(0,0,0,.24)');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(x, 0, width, artHeight);
+  if (image) drawCover(image, x, 0, innerWidth, artH);
+  else {
+    const g = ctx.createLinearGradient(0, 0, 0, artH);
+    g.addColorStop(0, card.background || '#138ddb');
+    g.addColorStop(1, '#0b74be');
+    ctx.fillStyle = g;
+    ctx.fillRect(x, 0, innerWidth, artH);
   }
+  drawBadge(card, x, innerWidth);
 
-  drawBadge(card, x, width, index);
-
-  ctx.fillStyle = '#f2f2f2';
-  ctx.fillRect(x, g.title_top_y, width, g.title_bottom_y - g.title_top_y + 1);
-  ctx.fillStyle = '#111';
+  ctx.fillStyle = '#f0f0f0';
+  ctx.fillRect(x, 872, innerWidth, 93);
+  ctx.fillStyle = '#101010';
+  ctx.font = '900 40px Arial, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = '900 40px "WatchCompareUserFont", Arial, sans-serif';
-  ctx.fillText(card.title || '', x + width / 2, (g.title_top_y + g.title_bottom_y) / 2 + 1, width - 28);
+  ctx.fillText(card.title || '', x + innerWidth / 2, 918, innerWidth - 34);
 
-  ctx.fillStyle = '#605f5b';
-  ctx.fillRect(x, g.description_top_y, width, g.description_bottom_y - g.description_top_y + 1);
+  ctx.fillStyle = '#625f56';
+  ctx.fillRect(x, 965, innerWidth, 110);
   ctx.fillStyle = '#fff';
-  ctx.font = '900 28px "WatchCompareUserFont", Arial, sans-serif';
-  ctx.fillText(card.description || '', x + width / 2, (g.description_top_y + g.description_bottom_y) / 2 + 1, width - 30);
-
-  ctx.fillStyle = '#101010';
-  ctx.fillRect(x, g.bottom_border_top_y, width, canvas.height - g.bottom_border_top_y);
-  ctx.restore();
-
-  ctx.fillStyle = '#101010';
-  ctx.fillRect(x + width, 0, separator, canvas.height);
-}
-
-function drawCreditsOverlay() {
-  const left = state.scene?.credits_left_x_px;
-  if (left == null || left >= canvas.width) return;
-  ctx.save();
-  ctx.fillStyle = '#101010';
-  ctx.fillRect(left, 0, canvas.width - left, canvas.height);
-  ctx.fillStyle = '#d7d7d7';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.font = '700 30px "WatchCompareUserFont", Arial, sans-serif';
-  ctx.fillText('WATCHCOMPARE', left + (canvas.width - left) / 2, canvas.height / 2);
-  ctx.restore();
-}
-
-function drawOutro() {
-  const scene = state.scene;
-  if (!scene) return;
-
-  if (scene.outro_wipe_bottom_y != null) {
-    ctx.fillStyle = '#050505';
-    ctx.fillRect(0, 0, canvas.width, scene.outro_wipe_bottom_y + 1);
+  ctx.font = '700 25px Arial, sans-serif';
+  const text = card.description || '';
+  const words = text.split(/\s+/);
+  const lines = [];
+  let line = '';
+  for (const word of words) {
+    const test = line ? `${line} ${word}` : word;
+    if (ctx.measureText(test).width > innerWidth - 34 && line) { lines.push(line); line = word; }
+    else line = test;
   }
+  if (line) lines.push(line);
+  lines.slice(0, 3).forEach((entry, i) => ctx.fillText(entry, x + innerWidth / 2, 994 + i * 28, innerWidth - 34));
+  ctx.fillStyle = '#11100c';
+  ctx.fillRect(x, 1075, pitch, 5);
+  ctx.restore();
 
-  if (scene.outro_group) {
-    const top = scene.outro_group.panel_top_y;
-    ctx.fillStyle = '#151515';
-    ctx.fillRect(70, top, 1240, 430);
-    ctx.fillStyle = '#e92735';
-    ctx.fillRect(112, top + 58, 510, 286);
-    ctx.fillRect(758, top + 58, 510, 286);
-    ctx.fillStyle = '#fff';
+  ctx.fillStyle = '#11100c';
+  ctx.fillRect(x + innerWidth, 0, separator, 1080);
+}
+
+function renderPreview() {
+  const frameState = getFrameState(state.frame);
+  ctx.fillStyle = '#101010';
+  ctx.fillRect(0, 0, 1920, 1080);
+  const pitch = state.profile.geometry.card_pitch_px || 477;
+  if (!state.project.cards.length) {
+    ctx.fillStyle = '#eee';
+    ctx.font = '800 58px Arial, sans-serif';
     ctx.textAlign = 'center';
-    ctx.font = '900 28px "WatchCompareUserFont", Arial, sans-serif';
-    ctx.fillText('BEST VIDEO FOR YOU', 367, top + 374);
-    ctx.fillText('NEWEST VIDEO', 1013, top + 374);
+    ctx.fillText('Add data to start', 960, 515);
     ctx.fillStyle = '#888';
-    ctx.font = '900 25px "WatchCompareUserFont", Arial, sans-serif';
-    ctx.fillText('Video Made By', 690, scene.outro_group.credits_top_y);
-  }
-
-  if (scene.outro_cta_bbox) {
-    const box = scene.outro_cta_bbox;
-    ctx.fillStyle = '#f5f5f5';
-    ctx.fillRect(box.x, box.y, box.width, box.height);
-    if (box.width > 250 && box.height > 70) {
-      ctx.fillStyle = scene.cta_like_blue_level ? `rgba(30,120,255,${Math.max(.25, scene.cta_like_blue_level)})` : '#252525';
-      ctx.fillRect(box.x + 30, box.y + 30, 72, 48);
-      ctx.fillStyle = '#e6212d';
-      ctx.fillRect(box.x + box.width / 2 - 90, box.y + 25, 180, 58);
-      ctx.fillStyle = '#fff';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.font = '900 20px Arial, sans-serif';
-      ctx.fillText(scene.cta_subscribed_bbox ? 'SUBSCRIBED' : 'SUBSCRIBE', box.x + box.width / 2, box.y + 54);
-    }
-  }
-}
-
-function renderCurrentFrame() {
-  ctx.save();
-  ctx.fillStyle = '#101010';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  const cards = state.project.cards;
-  emptyCanvasState.hidden = cards.length > 0;
-  if (cards.length) {
-    const frameState = getFrameState(state.frame);
-    const pitch = state.profile.geometry.card_pitch_px;
-    let trainX = frameState.card_train_x_px;
-
-    if (state.frame < 91 && cards[0]) {
-      const reveal = state.scene?.first_card_reveal_width_px ?? Math.min(pitch, (state.frame / 90) * pitch);
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, 0, reveal, canvas.height);
-      ctx.clip();
-      drawCard(cards[0], 0, 0);
-      ctx.restore();
-      for (let i = 1; i < cards.length; i += 1) drawCard(cards[i], i * pitch, i);
-    } else {
-      cards.forEach((card, index) => drawCard(card, index * pitch + trainX, index));
-    }
-
-    drawCreditsOverlay();
-    if (state.frame >= 11868) drawOutro();
-  }
-
-  const fade = state.scene?.outro_fade_level;
-  if (typeof fade === 'number' && fade < 1) {
-    ctx.fillStyle = `rgba(0,0,0,${1 - fade})`;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  }
-  ctx.restore();
-
-  $('#creditsReadout').textContent = state.scene?.credits_left_x_px != null ? `${state.scene.credits_left_x_px} px` : '—';
-  $('#fadeReadout').textContent = `${Math.round((state.scene?.outro_fade_level ?? 1) * 100)}%`;
-}
-
-function applyZoom() {
-  let scale = 1;
-  if (state.zoom === 'fit') {
-    const availableWidth = Math.max(240, stageScroller.clientWidth - 36);
-    const availableHeight = Math.max(140, stageScroller.clientHeight - 36);
-    scale = Math.min(availableWidth / canvas.width, availableHeight / canvas.height);
+    ctx.font = '28px Arial, sans-serif';
+    ctx.fillText('CTS workflow · WatchCompare renderer', 960, 565);
   } else {
-    scale = Number(state.zoom);
+    state.project.cards.forEach((card, index) => {
+      const x = Math.round(index * pitch + frameState.card_train_x_px);
+      if (x < 1920 && x + pitch > 0) drawCard(card, x, index, frameState);
+    });
   }
-  scale = Math.max(.12, Math.min(1, scale));
-  canvasWrap.style.width = `${canvas.width * scale}px`;
-  canvasWrap.style.height = `${canvas.height * scale}px`;
-  document.querySelectorAll('.zoom-tools button').forEach((button) => {
-    button.classList.toggle('active', button.dataset.zoom === String(state.zoom));
+  if (state.scene?.outro_wipe_bottom_y != null) {
+    const bottom = Number(state.scene.outro_wipe_bottom_y);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, 1920, Math.max(0, Math.min(1080, bottom + 1)));
+  }
+  const fade = Number(state.scene?.outro_fade_level ?? 1);
+  if (fade < 1) {
+    ctx.fillStyle = `rgba(0,0,0,${1 - fade})`;
+    ctx.fillRect(0, 0, 1920, 1080);
+  }
+  homeCtx.clearRect(0, 0, homePreview.width, homePreview.height);
+  homeCtx.drawImage(preview, 0, 0, homePreview.width, homePreview.height);
+  $('#stageValue').textContent = frameState.stage;
+  $('#pitchValue').textContent = `${pitch} px`;
+  $('#homePreviewSummary').textContent = `${state.project.cards.length} cards · ${formatDuration(projectDuration())} · frame ${state.frame.toLocaleString()}`;
+}
+
+function requestScene(frame) {
+  if (!invoke || !(frame < 430 || frame >= 11868)) { state.scene = null; return; }
+  const id = ++sceneRequest;
+  invoke('reference_scene', { frame }).then((scene) => {
+    if (id === sceneRequest && state.frame === frame) { state.scene = scene; renderPreview(); }
+  }).catch(() => {});
+}
+
+function computeAutoDuration() {
+  const count = state.project.cards.length;
+  if (!count) return 0;
+  return Math.min(count, 4) * 2 + Math.max(0, count - 4) * (10 / 3) + 2 + .8;
+}
+
+function projectDuration() {
+  if (!state.project.settings.automaticTiming && Number(state.project.settings.customDuration) > 0) return Number(state.project.settings.customDuration);
+  return computeAutoDuration() || state.profile.duration_seconds;
+}
+
+function outputTimeForFrame(frame) {
+  return (frame / Math.max(1, state.profile.frame_count - 1)) * projectDuration();
+}
+
+function setFrame(frame, { syncAudio = true } = {}) {
+  state.frame = Math.max(0, Math.min(state.profile.frame_count - 1, Math.round(frame)));
+  $('#timeline').value = String(state.frame);
+  const seconds = outputTimeForFrame(state.frame);
+  $('#timeReadout').textContent = formatDuration(seconds, true);
+  $('#frameReadout').textContent = `Frame ${state.frame.toLocaleString()}`;
+  requestScene(state.frame);
+  renderPreview();
+  if (syncAudio) syncAudio(false);
+}
+
+function formatDuration(seconds, millis = false) {
+  const total = Math.max(0, Number(seconds) || 0);
+  const m = Math.floor(total / 60);
+  const s = Math.floor(total % 60);
+  if (millis) return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(Math.floor((total % 1) * 1000)).padStart(3, '0')}`;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function parseDuration(value) {
+  const parts = String(value).trim().split(':').map(Number);
+  if (!parts.length || parts.some((v) => !Number.isFinite(v) || v < 0)) return null;
+  if (parts.length === 1) return parts[0];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return null;
+}
+
+function updateDurationUi() {
+  const automatic = state.project.settings.automaticTiming;
+  $('#automaticTiming').checked = automatic;
+  $('#customDuration').disabled = automatic;
+  $('#customDuration').value = automatic || !state.project.settings.customDuration ? '' : formatDuration(state.project.settings.customDuration);
+  $('#durationSummary').textContent = automatic
+    ? `Automatic · ${formatDuration(computeAutoDuration())}`
+    : `Custom · ${formatDuration(projectDuration())}`;
+}
+
+function play() {
+  if (state.playing) return pause();
+  if (state.frame >= state.profile.frame_count - 1) setFrame(0);
+  state.playing = true;
+  state.playStartFrame = state.frame;
+  state.playStartWall = performance.now();
+  $('#playButton').textContent = 'Ⅱ';
+  syncAudio(true);
+  const tick = (now) => {
+    if (!state.playing) return;
+    const durationMs = projectDuration() * 1000;
+    const modelFramesPerMs = (state.profile.frame_count - 1) / Math.max(1, durationMs);
+    const next = state.playStartFrame + (now - state.playStartWall) * modelFramesPerMs;
+    if (next >= state.profile.frame_count - 1) { setFrame(state.profile.frame_count - 1, { syncAudio: false }); pause(); return; }
+    setFrame(next, { syncAudio: false });
+    updateAudioVolumes(outputTimeForFrame(state.frame));
+    state.raf = requestAnimationFrame(tick);
+  };
+  state.raf = requestAnimationFrame(tick);
+}
+
+function pause() {
+  state.playing = false;
+  cancelAnimationFrame(state.raf);
+  $('#playButton').textContent = '▶';
+  state.audioElements.forEach((audio) => audio.pause());
+}
+
+function audioElement(track) {
+  if (!track.data) return null;
+  let audio = state.audioElements.get(track.id);
+  if (!audio) {
+    audio = new Audio(track.data);
+    audio.preload = 'auto';
+    state.audioElements.set(track.id, audio);
+  }
+  return audio;
+}
+
+function trackSegmentDuration(track) {
+  const end = Number(track.trimEnd) > Number(track.trimStart) ? Number(track.trimEnd) : Number(track.duration || 0);
+  return Math.max(.001, end - Number(track.trimStart || 0));
+}
+
+function trackGain(track, timelineTime) {
+  const local = timelineTime - Number(track.startTime || 0);
+  if (local < 0) return 0;
+  const segment = trackSegmentDuration(track);
+  if (!track.loop && local >= segment) return 0;
+  let gain = Math.max(0, Number(track.volume ?? 1)) * Math.max(0, Number(state.project.settings.soundtrackMasterVolume ?? 1));
+  const fadeIn = Math.max(0, Number(track.fadeIn || 0));
+  const fadeOut = Math.max(0, Number(track.fadeOut || 0));
+  if (fadeIn && local < fadeIn) gain *= local / fadeIn;
+  if (!track.loop && fadeOut && segment - local < fadeOut) gain *= Math.max(0, (segment - local) / fadeOut);
+  return Math.min(1, gain);
+}
+
+function updateAudioVolumes(timelineTime) {
+  state.project.audioTracks.forEach((track) => {
+    const audio = audioElement(track);
+    if (audio) audio.volume = trackGain(track, timelineTime);
   });
 }
 
-function togglePlayback() {
-  state.playing = !state.playing;
-  $('#playButton').textContent = state.playing ? '❚❚' : '▶';
-  state.lastPlaybackTime = 0;
-  state.frameAccumulator = 0;
-  if (state.playing) requestAnimationFrame(playbackTick);
-}
-
-function playbackTick(timestamp) {
-  if (!state.playing) return;
-  if (!state.lastPlaybackTime) state.lastPlaybackTime = timestamp;
-  const elapsed = timestamp - state.lastPlaybackTime;
-  state.lastPlaybackTime = timestamp;
-  state.frameAccumulator += (elapsed * state.profile.fps) / 1000;
-  const advance = Math.floor(state.frameAccumulator);
-  if (advance > 0) {
-    state.frameAccumulator -= advance;
-    const next = state.frame + advance;
-    if (next >= state.profile.frame_count - 1) {
-      state.playing = false;
-      $('#playButton').textContent = '▶';
-      setFrame(state.profile.frame_count - 1);
-      return;
+function syncAudio(shouldPlay = state.playing) {
+  const timelineTime = outputTimeForFrame(state.frame);
+  state.project.audioTracks.forEach((track) => {
+    const audio = audioElement(track);
+    if (!audio) return;
+    const local = timelineTime - Number(track.startTime || 0);
+    const segment = trackSegmentDuration(track);
+    if (local < 0 || (!track.loop && local >= segment)) { audio.pause(); return; }
+    const inSegment = track.loop ? (local % segment) : local;
+    const target = Number(track.trimStart || 0) + inSegment;
+    if (Math.abs((audio.currentTime || 0) - target) > .25) {
+      try { audio.currentTime = target; } catch {}
     }
-    setFrame(next, false);
-    if (next < 430 || next >= 11868) requestDetailedScene(next);
-  }
-  requestAnimationFrame(playbackTick);
+    audio.volume = trackGain(track, timelineTime);
+    if (shouldPlay) audio.play().catch(() => {}); else audio.pause();
+  });
 }
 
-async function loadReferenceModel() {
+async function addAudioFiles(files) {
+  for (const file of files) {
+    const data = await fileToDataUrl(file);
+    const duration = await new Promise((resolve) => {
+      const audio = new Audio(data);
+      audio.addEventListener('loadedmetadata', () => resolve(Number(audio.duration || 0)), { once: true });
+      audio.addEventListener('error', () => resolve(0), { once: true });
+    });
+    state.project.audioTracks.push({
+      id: uid('track'), name: file.name, data, duration, startTime: 0, trimStart: 0,
+      trimEnd: duration || null, volume: 1, fadeIn: 0, fadeOut: 0, loop: false,
+    });
+  }
+  persistProject();
+  renderAudioTracks();
+}
+
+function renderAudioTracks() {
+  const list = $('#audioTrackList');
+  list.textContent = '';
+  $('#audioEmpty').hidden = state.project.audioTracks.length > 0;
+  $('#masterVolume').value = String(state.project.settings.soundtrackMasterVolume ?? 1);
+  $('#masterVolumeValue').textContent = `${Math.round((state.project.settings.soundtrackMasterVolume ?? 1) * 100)}%`;
+  state.project.audioTracks.forEach((track) => {
+    const card = document.createElement('article');
+    card.className = 'audio-track-card surface';
+    card.innerHTML = `
+      <div class="track-name"><strong></strong><span></span></div>
+      <label>Start<input data-key="startTime" type="number" min="0" step="0.1"></label>
+      <label>Trim in<input data-key="trimStart" type="number" min="0" step="0.1"></label>
+      <label>Trim out<input data-key="trimEnd" type="number" min="0" step="0.1"></label>
+      <div class="track-wide">
+        <label>Volume <input data-key="volume" type="range" min="0" max="1.5" step="0.01"></label>
+        <label>Fade in <input data-key="fadeIn" type="number" min="0" step="0.1"></label>
+        <label>Fade out <input data-key="fadeOut" type="number" min="0" step="0.1"></label>
+        <label><input data-key="loop" type="checkbox"> Loop</label>
+        <button class="tonal remove-track">Remove</button>
+      </div>`;
+    $('.track-name strong', card).textContent = track.name;
+    $('.track-name span', card).textContent = `${track.duration ? formatDuration(track.duration, true) : 'duration unknown'} · starts ${track.startTime.toFixed(1)}s`;
+    $$('[data-key]', card).forEach((input) => {
+      const key = input.dataset.key;
+      if (input.type === 'checkbox') input.checked = Boolean(track[key]);
+      else input.value = track[key] ?? '';
+      input.addEventListener('input', () => {
+        track[key] = input.type === 'checkbox' ? input.checked : Number(input.value || 0);
+        persistProject();
+        syncAudio(false);
+      });
+    });
+    $('.remove-track', card).addEventListener('click', () => {
+      state.audioElements.get(track.id)?.pause();
+      state.audioElements.delete(track.id);
+      state.project.audioTracks = state.project.audioTracks.filter((item) => item.id !== track.id);
+      persistProject();
+      renderAudioTracks();
+    });
+    list.appendChild(card);
+  });
+}
+
+async function importMegapack(file) {
+  if (!invoke) throw new Error('Megapack import requires the app runtime.');
+  showToast(`Opening ${file.name}…`);
+  const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+  const project = await invoke('import_megapack', { bytes });
+  pause();
+  state.project = normalizeProject(project);
+  state.selectedCardId = state.project.cards[0]?.id || null;
+  persistProject();
+  syncAllUi();
+  setView('preview');
+  showToast(`Megapack imported · ${state.project.cards.length} cards.`);
+}
+
+async function exportMegapack() {
+  if (!invoke) throw new Error('Megapack export requires the app runtime.');
+  showToast('Packing artwork and soundtrack…');
+  const result = await invoke('export_megapack', { project: state.project });
+  const bytes = result instanceof Uint8Array ? result : new Uint8Array(result);
+  downloadBlob(new Blob([bytes], { type: 'application/zip' }), `${safeFilename(state.project.name)}.megapack.zip`);
+}
+
+function exportProject() {
+  downloadBlob(new Blob([JSON.stringify(state.project, null, 2)], { type: 'application/json' }), `${safeFilename(state.project.name)}.watchcompare.json`);
+}
+
+function exportFrame() {
+  preview.toBlob((blob) => {
+    if (blob) downloadBlob(blob, `${safeFilename(state.project.name)}-frame-${String(state.frame).padStart(5, '0')}.png`);
+  }, 'image/png');
+}
+
+function syncProjectName(value) {
+  state.project.name = String(value || 'Untitled comparison');
+  $('#desktopProjectName').value = state.project.name;
+  persistProject();
+}
+
+function syncAllUi() {
+  $('#desktopProjectName').value = state.project.name;
+  renderCards();
+  renderAudioTracks();
+  updateDurationUi();
+  renderPreview();
+}
+
+async function loadRenderer() {
   if (!invoke) {
-    $('#bridgeStatus').textContent = 'Web preview · Rust bridge unavailable';
-    setFrame(0);
+    $('#rendererStatus').textContent = 'Browser fallback · exact Rust bridge unavailable';
+    renderPreview();
     return;
   }
   try {
-    const [profile, track] = await Promise.all([
-      invoke('reference_profile'),
-      invoke('reference_track'),
-    ]);
+    const [profile, track] = await Promise.all([invoke('reference_profile'), invoke('reference_track')]);
     state.profile = profile;
     state.track = track;
     $('#timeline').max = String(profile.frame_count - 1);
-    $('#bridgeStatus').textContent = `Rust timeline loaded · ${profile.frame_count.toLocaleString()} exact samples`;
-    setFrame(Math.min(state.frame, profile.frame_count - 1));
-    applyZoom();
+    $('#rendererStatus').textContent = `Rust renderer connected · ${profile.frame_count.toLocaleString()} exact source frames`;
+    $('#mobileSubtitle').textContent = 'CTS workflow · Rust renderer connected';
+    renderPreview();
   } catch (error) {
-    console.error(error);
-    $('#bridgeStatus').textContent = 'Rust bridge error · fallback preview active';
-    showToast('Could not load the measured Rust timeline; using fallback motion.');
+    console.warn(error);
+    $('#rendererStatus').textContent = 'Renderer bridge failed · using fallback geometry';
   }
 }
 
-async function loadFonts(files) {
-  let loaded = 0;
-  for (const file of files) {
-    try {
-      const name = file.name.toLowerCase();
-      const weight = name.includes('heavy') ? '900' : name.includes('bold') ? '700' : name.includes('medium') ? '500' : '400';
-      const face = new FontFace('WatchCompareUserFont', await file.arrayBuffer(), { weight });
-      await face.load();
-      document.fonts.add(face);
-      loaded += 1;
-    } catch (error) {
-      console.warn('Font load failed', file.name, error);
-    }
-  }
-  if (loaded) {
-    showToast(`Loaded ${loaded} local font ${loaded === 1 ? 'file' : 'files'}.`);
-    renderCurrentFrame();
-  } else {
-    showToast('No font files could be loaded.');
-  }
-}
-
-function bindEvents() {
-  $('#projectName').addEventListener('input', (event) => {
-    state.project.name = event.target.value;
-    persistProject();
-  });
-
+function wireEvents() {
+  $$('[data-view]').forEach((button) => button.addEventListener('click', () => setView(button.dataset.view)));
+  $('#homeMegapackPin').addEventListener('click', () => $('#megapackFileInput').click());
+  $('#desktopMegapackButton').addEventListener('click', () => $('#megapackFileInput').click());
+  $('#importMegapackButton').addEventListener('click', () => $('#megapackFileInput').click());
+  $('#homeImportDataPin').addEventListener('click', () => { setView('data'); $('#dataPaste').focus(); });
+  $('#desktopProjectName').addEventListener('input', (event) => syncProjectName(event.target.value));
+  $('#desktopSearch').addEventListener('input', (event) => { state.search = event.target.value; $('#cardSearch').value = state.search; renderCards(); });
+  $('#cardSearch').addEventListener('input', (event) => { state.search = event.target.value; $('#desktopSearch').value = state.search; renderCards(); });
+  $('#dataPaste').addEventListener('input', refreshDataDetection);
+  $('#applyDataButton').addEventListener('click', applyPastedData);
+  $('#importDataFileButton').addEventListener('click', () => $('#dataFileInput').click());
+  $('#dataFileInput').addEventListener('change', async (event) => { const file = event.target.files?.[0]; if (file) await importDataFile(file); event.target.value = ''; });
   $('#addCardButton').addEventListener('click', addCard);
-  $('#newProjectButton').addEventListener('click', () => {
-    if (state.project.cards.length && !confirm('Create a new project? Unsaved exported files are not affected.')) return;
-    state.project = { version: 1, name: 'Untitled comparison', cards: [] };
-    state.selectedId = null;
-    $('#projectName').value = state.project.name;
-    persistProject();
-    renderCardList();
-    syncInspector();
-    setFrame(0);
-  });
-
-  $('#importProjectButton').addEventListener('click', () => $('#projectFileInput').click());
-  $('#importCsvButton').addEventListener('click', () => $('#csvFileInput').click());
-  $('#loadFontButton').addEventListener('click', () => $('#fontFileInput').click());
-  $('#chooseArtworkButton').addEventListener('click', () => $('#artworkFileInput').click());
-
-  $('#projectFileInput').addEventListener('change', async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-    try {
-      const project = normalizeProject(JSON.parse(await file.text()));
-      state.project = project;
-      state.selectedId = project.cards[0]?.id ?? null;
-      $('#projectName').value = project.name;
-      persistProject();
-      renderCardList();
-      syncInspector();
-      renderCurrentFrame();
-      showToast(`Imported ${project.cards.length} cards.`);
-    } catch (error) {
-      showToast(`Project import failed: ${error.message}`);
-    }
-  });
-
-  $('#csvFileInput').addEventListener('change', async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-    try {
-      importCsvText(await file.text());
-    } catch (error) {
-      showToast(`CSV import failed: ${error.message}`);
-    }
-  });
-
-  $('#fontFileInput').addEventListener('change', (event) => {
-    const files = [...(event.target.files || [])];
-    event.target.value = '';
-    if (files.length) loadFonts(files);
-  });
-
-  $('#artworkFileInput').addEventListener('change', async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    const card = currentCard();
-    if (!file || !card) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      card.artwork = reader.result;
-      card.artworkName = file.name;
-      imageCache.delete(card.artwork);
-      persistProject();
-      syncInspector();
-      renderCardList();
-      renderCurrentFrame();
-    };
-    reader.readAsDataURL(file);
-  });
-
-  $('#exportProjectButton').addEventListener('click', () => {
-    const blob = new Blob([JSON.stringify(state.project, null, 2)], { type: 'application/json' });
-    downloadBlob(blob, `${safeFilename(state.project.name)}.watchcompare.json`);
-  });
-
-  $('#exportFrameButton').addEventListener('click', () => {
-    if (!state.project.cards.length) {
-      showToast('Add or import cards before exporting a frame.');
-      return;
-    }
-    canvas.toBlob((blob) => {
-      if (!blob) return showToast('Could not encode the PNG frame.');
-      downloadBlob(blob, `${safeFilename(state.project.name)}-frame-${String(state.frame).padStart(5, '0')}.png`);
-    }, 'image/png');
-  });
-
-  ['cardTitle', 'cardDescription', 'cardBadge', 'cardBadgeSubtitle', 'cardAccent', 'cardBackground'].forEach((id) => {
-    $(`#${id}`).addEventListener('input', commitInspector);
-  });
-
-  $('#moveUpButton').addEventListener('click', () => moveCard(-1));
-  $('#moveDownButton').addEventListener('click', () => moveCard(1));
+  $$('[data-close-editor]').forEach((node) => node.addEventListener('click', closeCardEditor));
+  ['#cardBadge','#cardBadgeSubtitle','#cardTitle','#cardDescription','#cardAccent','#cardBackground'].forEach((selector) => $(selector).addEventListener('input', commitCardEditor));
+  $('#moveLeftButton').addEventListener('click', () => moveCard(-1));
+  $('#moveRightButton').addEventListener('click', () => moveCard(1));
   $('#duplicateCardButton').addEventListener('click', duplicateCard);
   $('#deleteCardButton').addEventListener('click', deleteCard);
-
-  $('#timeline').addEventListener('input', (event) => setFrame(Number(event.target.value)));
-  $('#playButton').addEventListener('click', togglePlayback);
-  $('#firstFrameButton').addEventListener('click', () => setFrame(0));
-  $('#prevFrameButton').addEventListener('click', () => setFrame(state.frame - 1));
-  $('#nextFrameButton').addEventListener('click', () => setFrame(state.frame + 1));
-  $('#lastFrameButton').addEventListener('click', () => setFrame(state.profile.frame_count - 1));
-
-  document.querySelectorAll('.zoom-tools button').forEach((button) => {
-    button.addEventListener('click', () => {
-      state.zoom = button.dataset.zoom;
-      applyZoom();
-    });
+  $('#chooseArtworkButton').addEventListener('click', () => $('#artworkFileInput').click());
+  $('#artworkFileInput').addEventListener('change', async (event) => {
+    const file = event.target.files?.[0]; const card = currentCard();
+    if (file && card) { card.artwork = await fileToDataUrl(file); card.artworkName = file.name; $('#artworkName').textContent = file.name; persistProject(); renderCards(); renderPreview(); }
+    event.target.value = '';
   });
-
-  window.addEventListener('resize', () => {
-    if (state.zoom === 'fit') applyZoom();
+  $('#timeline').addEventListener('input', (event) => { pause(); setFrame(Number(event.target.value)); });
+  $('#playButton').addEventListener('click', play);
+  $('#prevFrameButton').addEventListener('click', () => { pause(); setFrame(state.frame - 1); });
+  $('#nextFrameButton').addEventListener('click', () => { pause(); setFrame(state.frame + 1); });
+  $('#fitPreviewButton').addEventListener('click', () => $('#preview').scrollIntoView({ block: 'center', behavior: 'smooth' }));
+  $('#exportFrameButton').addEventListener('click', exportFrame);
+  $('#exportFrameButton2').addEventListener('click', exportFrame);
+  $('#automaticTiming').addEventListener('change', (event) => { state.project.settings.automaticTiming = event.target.checked; persistProject(); updateDurationUi(); setFrame(state.frame); });
+  $('#customDuration').addEventListener('change', (event) => {
+    const seconds = parseDuration(event.target.value);
+    if (!seconds) return showToast('Use MM:SS or HH:MM:SS.');
+    state.project.settings.customDuration = seconds; persistProject(); updateDurationUi(); setFrame(state.frame);
   });
-
-  window.addEventListener('keydown', (event) => {
-    if (event.target.matches('input,textarea')) return;
-    if (event.code === 'Space') {
-      event.preventDefault();
-      togglePlayback();
-    } else if (event.code === 'ArrowLeft') {
-      event.preventDefault();
-      setFrame(state.frame - 1);
-    } else if (event.code === 'ArrowRight') {
-      event.preventDefault();
-      setFrame(state.frame + 1);
-    }
+  $('#addAudioButton').addEventListener('click', () => $('#audioFileInput').click());
+  $('#audioEmptyButton').addEventListener('click', () => $('#audioFileInput').click());
+  $('#audioFileInput').addEventListener('change', async (event) => { if (event.target.files?.length) await addAudioFiles([...event.target.files]); event.target.value = ''; });
+  $('#masterVolume').addEventListener('input', (event) => {
+    state.project.settings.soundtrackMasterVolume = Number(event.target.value);
+    $('#masterVolumeValue').textContent = `${Math.round(Number(event.target.value) * 100)}%`;
+    updateAudioVolumes(outputTimeForFrame(state.frame)); persistProject();
+  });
+  $('#megapackFileInput').addEventListener('change', async (event) => {
+    const file = event.target.files?.[0];
+    if (file) { try { await importMegapack(file); } catch (error) { console.error(error); showToast(String(error)); } }
+    event.target.value = '';
+  });
+  $('#exportMegapackButton').addEventListener('click', async () => { try { await exportMegapack(); } catch (error) { console.error(error); showToast(String(error)); } });
+  $('#exportProjectButton').addEventListener('click', exportProject);
+  $('#projectFileInput').addEventListener('change', async (event) => {
+    const file = event.target.files?.[0];
+    if (file) { try { state.project = normalizeProject(JSON.parse(await file.text())); state.selectedCardId = state.project.cards[0]?.id || null; persistProject(); syncAllUi(); showToast('Project imported.'); } catch { showToast('Could not read project JSON.'); } }
+    event.target.value = '';
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeCardEditor();
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'o') { event.preventDefault(); $('#projectFileInput').click(); }
+    if (event.code === 'Space' && !['INPUT','TEXTAREA'].includes(document.activeElement?.tagName)) { event.preventDefault(); play(); }
   });
 }
 
 restoreProject();
-$('#projectName').value = state.project.name;
-renderCardList();
-syncInspector();
-bindEvents();
+wireEvents();
+syncAllUi();
+refreshDataDetection();
 setFrame(0);
-requestAnimationFrame(applyZoom);
-loadReferenceModel();
+loadRenderer();
