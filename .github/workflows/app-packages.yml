@@ -26,7 +26,7 @@ jobs:
           if-no-files-found: error
 
   android:
-    name: Android APK
+    name: Android APK (arm64)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,6 +35,8 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
       - name: Configure Android SDK and NDK
         shell: bash
         run: |
@@ -51,11 +53,16 @@ jobs:
         run: npx --yes @tauri-apps/cli@2.11.4 icon src-tauri/icons/source.svg
       - name: Initialize Android project
         run: npx --yes @tauri-apps/cli@2.11.4 android init --ci
-      - name: Build debug APK
-        run: npx --yes @tauri-apps/cli@2.11.4 android build --debug --apk
+      - name: Build arm64 debug APK
+        run: npx --yes @tauri-apps/cli@2.11.4 android build --debug --apk --target aarch64
+      - name: Show APK contents and size
+        shell: bash
+        run: |
+          set -euxo pipefail
+          find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print -exec ls -lh {} \;
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: WatchCompare-Android
+          name: WatchCompare-Android-arm64
           path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
