@@ -95,6 +95,19 @@ updateDurationUi = function ctsUpdateDurationUi() {
   $('#timeline').max = String(ctsProjectFrameCount() - 1);
 };
 
+/* wireEvents captured the old play function by reference; replace only this button. */
+const oldPlayButton = $('#playButton');
+const newPlayButton = oldPlayButton.cloneNode(true);
+oldPlayButton.replaceWith(newPlayButton);
+newPlayButton.addEventListener('click', () => play());
+
+/* loadRenderer is already running; whenever it reports back, restore the CTS range. */
+const rendererStatusObserver = new MutationObserver(() => {
+  updateDurationUi();
+  setFrame(Math.min(state.frame, ctsProjectFrameCount() - 1), { syncAudio: false });
+});
+rendererStatusObserver.observe($('#rendererStatus'), { childList: true, characterData: true, subtree: true });
+
 /* First launch should demonstrate the renderer, not look like an empty black preview. */
 const initialVisibleFrame = Math.min(480, ctsProjectFrameCount() - 1);
 setFrame(initialVisibleFrame);
