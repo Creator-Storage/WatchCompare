@@ -11,6 +11,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Syntax-check packaged frontend
+        run: |
+          node --check src/app.js
+          node --check src/cts-timeline-adapter.js
+          node --check src/cts-import-adapter.js
       - name: Test exact source-frame fixtures
         run: cargo test -p watchcompare-fixtures
       - name: Test exact cursor trajectory
